@@ -261,7 +261,12 @@ fun HomeRoute(
     var folderPickerFor by remember { mutableStateOf<AppInfo?>(null) }
 
     val nowPlaying by NowPlayingBus.state.collectAsState()
-    val listenerGranted = remember(homeIntentTick) { isListenerEnabled(context) }
+    // Asked again each time the launcher comes back to the front, not only on HOME. Access is
+    // granted on a system screen, and coming back from it with BACK left this stale: with access
+    // just granted and nothing playing, the block kept its paddings around a card that draws
+    // nothing; with access taken away, the card asking for it never came back.
+    var listenerGranted by remember { mutableStateOf(isListenerEnabled(context)) }
+    LaunchedEffect(homeIntentTick) { listenerGranted = isListenerEnabled(context) }
     // Don't reserve the block (or its padding) unless there is something to render:
     // no live session means the whole thing collapses, padding included.
     val nowPlayingHasContent = settings.nowPlayingEnabled && (!listenerGranted || nowPlaying != null)
@@ -441,7 +446,10 @@ fun HomeRoute(
                 // later departure.
                 Lifecycle.Event.ON_PAUSE ->
                     if (keepListThroughPause) keepListThroughPause = false else closeAppList(snap = true)
-                Lifecycle.Event.ON_RESUME -> keepListThroughPause = false
+                Lifecycle.Event.ON_RESUME -> {
+                    keepListThroughPause = false
+                    listenerGranted = isListenerEnabled(context)
+                }
                 else -> Unit
             }
         }

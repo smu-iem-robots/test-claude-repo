@@ -336,7 +336,7 @@ fun SettingsScreen(
     // section it belongs in, and the control itself. One list rather than a block per section
     // because the rows have to serve two readers — someone walking a section, and someone
     // typing at the search box — and a row written twice is a row that drifts.
-    val entries = listOf(
+    val entries = (listOf(
         // ---- Appearance ----
         SettingsEntry(SettingsSection.APPEARANCE, stringResource(R.string.settings_preview)) {
             RowPreview(previewApp, iconSizeDp, labelSizeSp, font, fontFile, itemSpacingDp)
@@ -882,7 +882,9 @@ fun SettingsScreen(
                 onClick = onOpenHiddenApps,
             )
         },
-    ).filter { it.visible }
+        // Rows that read and write their own settings rather than arriving as parameters; see
+        // ExtraSettings.kt for why.
+    ) + extraSettingsEntries()).filter { it.visible }
 
     // What the list below actually draws: the matches while something is typed, the open
     // section otherwise, and nothing at all on the top menu.
@@ -1124,7 +1126,7 @@ private fun RowDivider() {
 }
 
 @Composable
-private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+internal fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1145,7 +1147,7 @@ private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean
 }
 
 @Composable
-private fun SwitchRowWithDetail(
+internal fun SwitchRowWithDetail(
     label: String,
     detail: String,
     checked: Boolean,
@@ -1452,7 +1454,7 @@ private fun TextColorRow(
  * settings used to be spread through Behavior while the search options sat nowhere near the
  * list they search, which meant knowing the implementation to find anything.
  */
-private enum class SettingsSection(@StringRes val labelRes: Int) {
+internal enum class SettingsSection(@StringRes val labelRes: Int) {
     APPEARANCE(R.string.settings_section_appearance),
     HOME(R.string.settings_section_home),
     APP_LIST(R.string.settings_section_app_list),
@@ -1469,7 +1471,7 @@ private enum class SettingsSection(@StringRes val labelRes: Int) {
  * [keywords] is what else the row answers to, for the search box: the words someone would
  * reach for who does not already know what this screen calls the thing.
  */
-private class SettingsEntry(
+internal class SettingsEntry(
     val section: SettingsSection,
     val title: String,
     val keywords: String = "",
@@ -1483,7 +1485,7 @@ private class SettingsEntry(
 }
 
 @Composable
-private fun BackupRow(label: String, detail: String, onClick: () -> Unit) {
+internal fun BackupRow(label: String, detail: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

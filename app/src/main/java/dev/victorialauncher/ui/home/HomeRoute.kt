@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.ui.platform.LocalLayoutDirection
 import kotlin.math.roundToInt
@@ -472,6 +473,18 @@ fun HomeRoute(
         EdgeSide.LEFT -> insetLeftDp
         EdgeSide.RIGHT -> insetRightDp
         EdgeSide.BOTH -> maxOf(insetLeftDp, insetRightDp)
+    }
+
+    // A corner button stands at the foot of one edge, the start when the favorites lean right
+    // and the end otherwise, as HomeScreen places it, and the zone on that edge lies over it.
+    // That much of the edge is left to the button for as long as the button is on screen
+    // (#113); with the list up it is not, and the whole edge scrubs as before.
+    val cornerSide = if (settings.alignment == HomeAlignment.RIGHT) EdgeSide.LEFT else EdgeSide.RIGHT
+    val navigationBarBottomPx = WindowInsets.navigationBars.getBottom(densityNow)
+    val cornerKeepOutPx = if ((cornerButtonApp != null || cornerButtonIsSearch) && !appListVisible) {
+        navigationBarBottomPx + with(densityNow) { cornerButtonReachDp(settings.iconSizeDp).toPx() }
+    } else {
+        0f
     }
 
     LaunchedEffect(settings.edgeSide, settings.edgeZoneWidthDp, insetLeftDp, insetRightDp, view, band) {
@@ -1007,6 +1020,8 @@ fun HomeRoute(
                         scope.launch { openAnim.snapTo(openDistancePx) }
                     },
                     onDoubleTap = if (settings.doubleTapToLock) ({ lockOrExplain() }) else null,
+                    bottomKeepOutPx = if (side == cornerSide) cornerKeepOutPx else 0f,
+                    viewportHeightPx = viewportHeightPx,
                     // Aligned to the top when it is confined, because the offset that puts it
                     // against the band is measured from there. Centred, it would be placed by
                     // half the leftover height and then pushed down again by the whole of the

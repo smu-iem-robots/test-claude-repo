@@ -1117,13 +1117,13 @@ fun HomeScreen(
                 modifier = Modifier
                     .align(corner)
                     .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 24.dp)
+                    .padding(horizontal = 20.dp, vertical = CORNER_BUTTON_MARGIN)
                     .clip(CircleShape)
                     .clickable {
                         if (cornerButtonIsSearch) onOpenCornerSearch()
                         else cornerButtonApp?.let { onOpenCornerApp(it) }
                     }
-                    .padding(8.dp),
+                    .padding(CORNER_BUTTON_PADDING),
             ) {
                 if (cornerButtonIsSearch) {
                     Icon(
@@ -1772,6 +1772,21 @@ private fun handleReserve(dragHandle: Modifier?, sidePaddingDp: Int): Dp {
 private val STRIP_INSET = 56.dp
 
 private val MAX_CONTENT_WIDTH = 600.dp
+
+/** Space the corner button keeps above and below itself, the navigation bar not counted. */
+private val CORNER_BUTTON_MARGIN = 24.dp
+
+/** Room around the corner button's icon that still answers a tap. */
+private val CORNER_BUTTON_PADDING = 8.dp
+
+/**
+ * How far up from the navigation bar the corner button reaches, its margins included.
+ *
+ * Worked out here, beside the paddings it adds up, because the edge zone has to leave exactly
+ * this much of its side alone for the button to be tappable at all (#113).
+ */
+internal fun cornerButtonReachDp(iconSizeDp: Int): Dp =
+    iconSizeDp.dp + CORNER_BUTTON_PADDING * 2 + CORNER_BUTTON_MARGIN * 2
 
 /** Which side a capped stack sits against, so it stays where the rows are aligned. */
 private fun HomeAlignment.wideScreenAlignment(): Alignment = when (this) {

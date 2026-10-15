@@ -83,6 +83,13 @@ fun EdgeTouchZone(
     onDismiss: () -> Unit,
     /** Null when double-tap-to-lock is off, so a second tap is simply another tap. */
     onDoubleTap: (() -> Unit)?,
+    /**
+     * Pixels at the foot of this edge left to whatever sits there, so a button in that corner
+     * gets its own taps (#113).
+     */
+    bottomKeepOutPx: Float = 0f,
+    /** Height of the screen the zone is laid out on, which a confined zone is cut against. */
+    viewportHeightPx: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
@@ -104,13 +111,26 @@ fun EdgeTouchZone(
             // The whole side, or only as much of it as the letters occupy. Full height is the
             // old behaviour and still the default; confined, the edge stops taking touches
             // meant for whatever shares that side of the screen.
+            //
+            // Either way it stops short of a corner button rather than lying over it. The zone
+            // is the topmost thing on the screen and takes every touch it covers, so a button
+            // underneath it opened the list instead of doing what it was set to do (#113).
+            // Cut from the bottom only: the zone's top is what every touch is measured from.
             .then(
                 if (!bandOnly) {
-                    Modifier.fillMaxHeight()
+                    Modifier
+                        .fillMaxHeight()
+                        .padding(bottom = (bottomKeepOutPx / density).dp)
                 } else {
+                    val bottomPx = EdgeZoneGeometry.confinedBottomPx(
+                        bandTopPx = band.topPx,
+                        bandBottomPx = band.bottomPx,
+                        viewportHeightPx = viewportHeightPx,
+                        bottomKeepOutPx = bottomKeepOutPx,
+                    )
                     Modifier
                         .offset { IntOffset(0, band.topPx.roundToInt()) }
-                        .height((band.heightPx / density).dp)
+                        .height(((bottomPx - band.topPx) / density).dp)
                 }
             )
             .pointerInput(letters, band, hapticsEnabled, fromLeft, bandOnly) {

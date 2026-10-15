@@ -132,6 +132,38 @@ class EntryKeysTest {
     }
 
     @Test
+    fun `a package owns its activities and its shortcuts in every profile`() {
+        val pkg = "com.example.app"
+        assertTrue(EntryKeys.belongsToPackage(appKey, pkg))
+        assertTrue(EntryKeys.belongsToPackage("$appKey|u10", pkg))
+        assertTrue(EntryKeys.belongsToPackage(EntryKeys.shortcut(pkg, "chat-7"), pkg))
+        assertTrue(EntryKeys.belongsToPackage(EntryKeys.shortcut(pkg, "chat-7", userSerial = 10L), pkg))
+        // What the icon cache builds on top of the key still answers to the same package.
+        assertTrue(EntryKeys.belongsToPackage("$appKey|com.example.app.MainActivity|null|null|144", pkg))
+    }
+
+    @Test
+    fun `a package does not own a neighbour whose name merely starts the same`() {
+        assertFalse(EntryKeys.belongsToPackage(appKey, "com.example"))
+        assertFalse(EntryKeys.belongsToPackage("com.example.app2/com.example.app2.Main", "com.example.app"))
+        assertFalse(EntryKeys.belongsToPackage(EntryKeys.shortcut("com.example.app2", "id"), "com.example.app"))
+    }
+
+    @Test
+    fun `a shortcut belongs to its publisher, not to whatever its id mentions`() {
+        val bookmark = EntryKeys.shortcut("org.browser", "com.example.app/page")
+        assertTrue(EntryKeys.belongsToPackage(bookmark, "org.browser"))
+        assertFalse(EntryKeys.belongsToPackage(bookmark, "com.example.app"))
+    }
+
+    @Test
+    fun `no package owns the search entry, the private space row or a folder`() {
+        assertFalse(EntryKeys.belongsToPackage(EntryKeys.SEARCH, "search"))
+        assertFalse(EntryKeys.belongsToPackage(EntryKeys.PRIVATE_SPACE, "private"))
+        assertFalse(EntryKeys.belongsToPackage(folderToken("abc123"), "folder"))
+    }
+
+    @Test
     fun `a package named like a prefix cannot forge another kind of key`() {
         // A Java package segment cannot contain a colon, so no real app key starts with a prefix.
         // Even so, the search check is an exact match and never a prefix match.

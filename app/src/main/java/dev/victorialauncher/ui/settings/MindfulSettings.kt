@@ -21,6 +21,9 @@ import kotlin.math.roundToInt
 /**
  * The settings for "Pause before opening": which apps pause, and for how long. The apps are
  * marked from their own long-press menus as well; the row here is for seeing them all at once.
+ *
+ * Double-tapping the wallpaper to lock is here as well. It is no part of the pause, but it is a
+ * row that reads and writes its own value, which is all this file is for.
  */
 @Composable
 internal fun mindfulSettingsEntries(onOpenRoute: (String) -> Unit): List<SettingsEntry> {
@@ -28,6 +31,7 @@ internal fun mindfulSettingsEntries(onOpenRoute: (String) -> Unit): List<Setting
     val scope = rememberCoroutineScope()
     val mindfulApps by app.prefs.mindfulApps.collectAsState(initial = emptySet())
     val mindfulSeconds by app.prefs.mindfulSeconds.collectAsState(initial = DEFAULT_MINDFUL_SECONDS)
+    val doubleTapHomeLock by app.prefs.doubleTapHomeLock.collectAsState(initial = false)
     // Counted against what can be listed right now, as the hidden-apps row is, rather than the
     // stored keys: those include a locked private space's apps, which a number on this screen
     // would give away, and apps since uninstalled, which the picker no longer shows.
@@ -69,6 +73,17 @@ internal fun mindfulSettingsEntries(onOpenRoute: (String) -> Unit): List<Setting
                 range = MINDFUL_SECONDS_RANGE.first.toFloat()..MINDFUL_SECONDS_RANGE.last.toFloat(),
                 valueLabel = "${mindfulSeconds}s",
                 onValueChange = { scope.launch { app.prefs.setMindfulSeconds(it.roundToInt()) } },
+            )
+        },
+        SettingsEntry(
+            SettingsSection.GESTURES, stringResource(R.string.settings_double_tap_home_lock),
+            "lock screen sleep double tap wallpaper home",
+        ) {
+            SwitchRowWithDetail(
+                label = stringResource(R.string.settings_double_tap_home_lock),
+                detail = stringResource(R.string.settings_double_tap_home_lock_detail),
+                checked = doubleTapHomeLock,
+                onCheckedChange = { scope.launch { app.prefs.setDoubleTapHomeLock(it) } },
             )
         },
     )

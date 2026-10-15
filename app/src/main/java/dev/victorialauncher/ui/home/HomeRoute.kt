@@ -271,6 +271,7 @@ fun HomeRoute(
     val mindfulSeconds by app.prefs.mindfulSeconds.collectAsState(initial = DEFAULT_MINDFUL_SECONDS)
     // The app waiting behind a pause, or null while there is none on screen.
     var mindfulFor by remember { mutableStateOf<AppInfo?>(null) }
+    val doubleTapHomeLock by app.prefs.doubleTapHomeLock.collectAsState(initial = false)
 
     val nowPlaying by NowPlayingBus.state.collectAsState()
     // Asked again each time the launcher comes back to the front, not only on HOME. Access is
@@ -308,7 +309,10 @@ fun HomeRoute(
         }
     val band = liveBand ?: storedBand ?: favBand ?: ScrubBand.fallbackFor(viewportHeightPx)
 
-    /** Locking is a strip gesture now, so the toast that explains it lives with the strip. */
+    /**
+     * The strip's double tap and the wallpaper's both lock through this, so either one says the
+     * same thing when the accessibility service it needs is off.
+     */
     fun lockOrExplain() {
         if (!SystemUi.lockScreen()) {
             Toast.makeText(
@@ -857,6 +861,14 @@ fun HomeRoute(
                 onUninstall = { app.appRepository.uninstall(it) },
                 mindfulApps = mindfulApps,
                 onSetMindful = { appInfo, pause -> scope.launch { app.prefs.setMindful(appInfo.key, pause) } },
+                // Edit layout never sees it, since the detector stands down there, and nor does
+                // the open list, which takes every touch before the home screen can; checked
+                // again here so neither rests on how the layers happen to be stacked.
+                onDoubleTapWallpaper = if (doubleTapHomeLock) {
+                    { if (!homeEditMode && !appListVisible) lockOrExplain() }
+                } else {
+                    null
+                },
             )
         }
 

@@ -29,4 +29,8 @@
         <item quantity="other">%1$d apps wait a moment before they open</item>
     </plurals>
     <string name="settings_mindful_seconds">Length of the pause</string>
+
+    <!-- Double-tap the wallpaper to lock -->
+    <string name="settings_double_tap_home_lock">Double-tap the wallpaper to lock</string>
+    <string name="settings_double_tap_home_lock_detail">Needs Victoria Launcher enabled under Accessibility, like the double tap on the A-Z strip</string>
 </resources>

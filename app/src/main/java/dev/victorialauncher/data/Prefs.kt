@@ -204,6 +204,7 @@ class Prefs(private val context: Context) {
         val MINDFUL_APPS = stringSetPreferencesKey(PREF_MINDFUL_APPS)
         val MINDFUL_TALLY = stringPreferencesKey(PREF_MINDFUL_TALLY)
         val MINDFUL_SECONDS = intPreferencesKey("mindful_seconds")
+        val DOUBLE_TAP_HOME_LOCK = booleanPreferencesKey("double_tap_home_lock")
     }
 
     /** Every padding a user can set by hand; their presence is what retires the first-run layout. */
@@ -460,6 +461,14 @@ class Prefs(private val context: Context) {
 
     val doubleTapToLock: Flow<Boolean> =
         data.map { it[Keys.DOUBLE_TAP_TO_LOCK] ?: false }.distinctUntilChanged()
+
+    /**
+     * Whether a double tap on bare wallpaper locks the screen, as one on the strip can. Off by
+     * default: the wallpaper has answered only a long press until now, and the lock needs the
+     * accessibility service, which nobody should find a home screen gesture relying on unasked.
+     */
+    val doubleTapHomeLock: Flow<Boolean> =
+        data.map { it[Keys.DOUBLE_TAP_HOME_LOCK] ?: false }.distinctUntilChanged()
 
     /**
      * Apps that wait behind a short pause before they open from here. Empty until someone marks
@@ -1083,6 +1092,10 @@ class Prefs(private val context: Context) {
 
     suspend fun setDoubleTapToLock(v: Boolean) {
         context.dataStore.edit { it[Keys.DOUBLE_TAP_TO_LOCK] = v }
+    }
+
+    suspend fun setDoubleTapHomeLock(v: Boolean) {
+        context.dataStore.edit { it[Keys.DOUBLE_TAP_HOME_LOCK] = v }
     }
 
     /**

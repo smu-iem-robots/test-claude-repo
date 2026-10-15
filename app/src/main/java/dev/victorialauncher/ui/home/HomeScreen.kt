@@ -283,6 +283,13 @@ fun HomeScreen(
     /** Which apps pause before they open, so a favorite's menu can offer to start or stop it. */
     mindfulApps: Set<String> = emptySet(),
     onSetMindful: (AppInfo, Boolean) -> Unit = { _, _ -> },
+    /**
+     * What a double tap on bare wallpaper does, or null for nothing. Null rather than a callback
+     * that does nothing, because a detector told to watch for a second tap holds on to every
+     * first one until the double-tap window closes, and takes a long press begun inside it as
+     * that second tap rather than as the long press that opens the wallpaper's menu.
+     */
+    onDoubleTapWallpaper: (() -> Unit)? = null,
 ) {    // Appended at the point of showing rather than stored in the label, so a rename still
     // wins and turning this off needs no re-reading of every app.
     val workSuffix = stringResource(R.string.app_work_suffix)
@@ -636,6 +643,11 @@ fun HomeScreen(
         )
     }
 
+    // Read through this inside the tap detector below, which is only restarted when a double
+    // tap starts or stops meaning something at all.
+    val doubleTapWallpaper by rememberUpdatedState(onDoubleTapWallpaper ?: {})
+    val watchDoubleTap = onDoubleTapWallpaper != null
+
     // The rows take their style from the ambient one rather than naming it, so the shadow can
     // be put behind all of them at once instead of at every call that draws a name.
     CompositionLocalProvider(
@@ -743,9 +755,10 @@ fun HomeScreen(
             // Rows, the widget and the edge zones all claim their own presses, so the only
             // thing that reaches this is bare wallpaper — which until now was the one part of
             // the home screen that answered nothing at all.
-            .pointerInput(editMode) {
+            .pointerInput(editMode, watchDoubleTap) {
                 if (editMode) return@pointerInput
                 detectTapGestures(
+                    onDoubleTap = if (watchDoubleTap) ({ _: Offset -> doubleTapWallpaper() }) else null,
                     onLongPress = { offset ->
                         backgroundMenuOffset = with(density) { DpOffset(offset.x.toDp(), offset.y.toDp()) }
                         backgroundMenu = true

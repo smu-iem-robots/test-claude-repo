@@ -62,6 +62,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TimerOff
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
@@ -278,6 +280,9 @@ fun HomeScreen(
      */
     canUninstall: (AppInfo) -> Boolean = { false },
     onUninstall: (AppInfo) -> Unit = {},
+    /** Which apps pause before they open, so a favorite's menu can offer to start or stop it. */
+    mindfulApps: Set<String> = emptySet(),
+    onSetMindful: (AppInfo, Boolean) -> Unit = { _, _ -> },
 ) {    // Appended at the point of showing rather than stored in the label, so a rename still
     // wins and turning this off needs no re-reading of every app.
     val workSuffix = stringResource(R.string.app_work_suffix)
@@ -1126,6 +1131,11 @@ fun HomeScreen(
                             onUnpin = { menuForKey = null; onUnpinShortcut(item.app) },
                             onRemove = { menuForKey = null; onRemoveFavorite(item.app) },
                             onEditIconName = { menuForKey = null; renameDialogFor = item.app },
+                            isMindful = item.app.key in mindfulApps,
+                            onToggleMindful = {
+                                menuForKey = null
+                                onSetMindful(item.app, item.app.key !in mindfulApps)
+                            },
                             onOpenSettings = { menuForKey = null; onOpenSettings() },
                         )
                     }
@@ -1316,6 +1326,8 @@ private fun FavoriteRow(
     onUnpin: () -> Unit,
     onRemove: () -> Unit,
     onEditIconName: () -> Unit,
+    isMindful: Boolean,
+    onToggleMindful: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -1450,6 +1462,26 @@ private fun FavoriteRow(
                 leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null) },
                 onClick = onEditIconName,
             )
+            // Anything a press opens can be made to wait; the private space row only locks or
+            // unlocks, which is nothing to think twice about.
+            if (app.kind == EntryKind.APP || app.kind == EntryKind.SHORTCUT) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(
+                                if (isMindful) R.string.action_stop_pausing else R.string.action_pause_before_opening
+                            )
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            if (isMindful) Icons.Filled.TimerOff else Icons.Filled.Timer,
+                            contentDescription = null,
+                        )
+                    },
+                    onClick = onToggleMindful,
+                )
+            }
             HorizontalDivider()
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.action_open_settings)) },

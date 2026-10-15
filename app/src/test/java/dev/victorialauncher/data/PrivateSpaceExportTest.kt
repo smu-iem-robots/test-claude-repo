@@ -137,6 +137,29 @@ class PrivateSpaceExportTest {
         assertEquals(a, stripPrivateSpaceFromExport("quick_launch_left_key", a, strip))
     }
 
+    // --- mindful_apps / mindful_tally_json (pause before opening) ----------------------------
+
+    @Test
+    fun `a private app that pauses before opening is removed, the rest of the set survives`() {
+        val raw = setOf(a, bPrivate, c)
+        assertEquals(setOf(a, c), stripPrivateSpaceFromExport("mindful_apps", raw, strip))
+    }
+
+    @Test
+    fun `a pause set with no private key comes back identical`() {
+        val raw = setOf(a, c)
+        assertSame(raw, stripPrivateSpaceFromExport("mindful_apps", raw, strip))
+    }
+
+    @Test
+    fun `a private app's pause tally is removed, other tallies survive`() {
+        val raw = """{"$a":"20000:1:2","$bPrivate":"20000:3:0"}"""
+        assertEquals(
+            """{"$a":"20000:1:2"}""",
+            stripPrivateSpaceFromExport("mindful_tally_json", raw, strip),
+        )
+    }
+
     // --- cross-cutting behavior ---------------------------------------------------------------
 
     @Test

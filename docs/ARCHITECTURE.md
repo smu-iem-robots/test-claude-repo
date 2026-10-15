@@ -20,6 +20,7 @@ ui/
   VictoriaNavHost.kt            collects settings once, hosts the navigation graph
   home/HomeRoute.kt             home destination: home screen, app-list overlay, edge zones
   home/HomeScreen.kt            widget slot + favorites/folders column + edit mode
+  home/MindfulPause.kt          the countdown shown before an app marked to pause opens
   applist/AppListScreen.kt      A-Z list, pull-to-collapse, per-app menus
   applist/EdgeScrubber.kt       the A-Z strip that bows around the fingertip
   applist/EdgeTouchZone.kt      the invisible edge strip that opens and scrubs the list

@@ -70,6 +70,13 @@ val EDGE_ZONE_INSET_RANGE = 0..32
 
 /** Enough to be a list of what is new, short of being a second app list. */
 val RECENT_SECTION_RANGE = 3..15
+
+/**
+ * Seconds the pause before a chosen app lasts. Under three it is over before it has been
+ * read; past thirty it stops being a moment to think and becomes the app not opening.
+ */
+val MINDFUL_SECONDS_RANGE = 3..30
+const val DEFAULT_MINDFUL_SECONDS = 5
 enum class AppFont { SYSTEM, SANS_SERIF, SERIF, MONOSPACE, CUSTOM }
 
 /** AUTO picks light or dark text from the wallpaper's own colors. */
@@ -194,6 +201,9 @@ class Prefs(private val context: Context) {
         val STATUS_BAR_PEEK_SECONDS = intPreferencesKey("status_bar_peek_seconds")
         val AZ_BAND_TOP_FRACTION = floatPreferencesKey("az_band_top_fraction")
         val AZ_BAND_HEIGHT_FRACTION = floatPreferencesKey("az_band_height_fraction")
+        val MINDFUL_APPS = stringSetPreferencesKey(PREF_MINDFUL_APPS)
+        val MINDFUL_TALLY = stringPreferencesKey(PREF_MINDFUL_TALLY)
+        val MINDFUL_SECONDS = intPreferencesKey("mindful_seconds")
     }
 
     /** Every padding a user can set by hand; their presence is what retires the first-run layout. */
@@ -450,6 +460,21 @@ class Prefs(private val context: Context) {
 
     val doubleTapToLock: Flow<Boolean> =
         data.map { it[Keys.DOUBLE_TAP_TO_LOCK] ?: false }.distinctUntilChanged()
+
+    /**
+     * Apps that wait behind a short pause before they open from here. Empty until someone marks
+     * one from its long-press menu, so nobody's launches change on their own.
+     */
+    val mindfulApps: Flow<Set<String>> =
+        data.map { it[Keys.MINDFUL_APPS] ?: emptySet() }.distinctUntilChanged()
+
+    /** Per app key, today's opens and let-gos behind the pause; see [MindfulTally]. */
+    val mindfulTally: Flow<Map<String, String>> =
+        data.map { pref -> jsonToMap(pref[Keys.MINDFUL_TALLY]) }.distinctUntilChanged()
+
+    val mindfulSeconds: Flow<Int> =
+        data.map { (it[Keys.MINDFUL_SECONDS] ?: DEFAULT_MINDFUL_SECONDS).coerceIn(MINDFUL_SECONDS_RANGE) }
+            .distinctUntilChanged()
 
     val edgeSide: Flow<EdgeSide> = data.map {
         runCatching { EdgeSide.valueOf(it[Keys.EDGE_SIDE] ?: EdgeSide.RIGHT.name) }.getOrDefault(EdgeSide.RIGHT)
@@ -844,7 +869,7 @@ class Prefs(private val context: Context) {
      * only clutter nothing can reach, and it would be restored onto a new phone by the settings
      * backup as well.
      *
-     * One transaction rather than seven, so a row cannot end up half forgotten.
+     * One transaction rather than one per store, so a row cannot end up half forgotten.
      */
     suspend fun forgetEntry(componentKey: String) {
         context.dataStore.edit { pref ->
@@ -867,6 +892,12 @@ class Prefs(private val context: Context) {
 
             val counts = jsonToMap(pref[Keys.LAUNCH_COUNTS])
             if (componentKey in counts) pref[Keys.LAUNCH_COUNTS] = mapToJson(counts - componentKey)
+
+            val mindful = pref[Keys.MINDFUL_APPS] ?: emptySet()
+            if (componentKey in mindful) pref[Keys.MINDFUL_APPS] = mindful - componentKey
+
+            val tally = jsonToMap(pref[Keys.MINDFUL_TALLY])
+            if (componentKey in tally) pref[Keys.MINDFUL_TALLY] = mapToJson(tally - componentKey)
 
             // A quick-launch slot that still points at this key would otherwise swipe to
             // nothing once the row is gone for good.
@@ -1052,6 +1083,33 @@ class Prefs(private val context: Context) {
 
     suspend fun setDoubleTapToLock(v: Boolean) {
         context.dataStore.edit { it[Keys.DOUBLE_TAP_TO_LOCK] = v }
+    }
+
+    /**
+     * Marks an app to pause before it opens, or stops it. Stopping drops the app's tally as
+     * well: it only ever describes today, and nothing reads it once the pause is gone.
+     */
+    suspend fun setMindful(componentKey: String, mindful: Boolean) {
+        context.dataStore.edit { pref ->
+            val current = pref[Keys.MINDFUL_APPS] ?: emptySet()
+            pref[Keys.MINDFUL_APPS] = if (mindful) current + componentKey else current - componentKey
+            if (!mindful) {
+                val tally = jsonToMap(pref[Keys.MINDFUL_TALLY])
+                if (componentKey in tally) pref[Keys.MINDFUL_TALLY] = mapToJson(tally - componentKey)
+            }
+        }
+    }
+
+    /** Counts one pause that ended, on the caller's local [epochDay]. */
+    suspend fun recordMindful(componentKey: String, epochDay: Long, opened: Boolean) {
+        context.dataStore.edit { pref ->
+            val tally = MindfulTally.recordInto(jsonToMap(pref[Keys.MINDFUL_TALLY]), componentKey, epochDay, opened)
+            pref[Keys.MINDFUL_TALLY] = mapToJson(tally)
+        }
+    }
+
+    suspend fun setMindfulSeconds(v: Int) {
+        context.dataStore.edit { it[Keys.MINDFUL_SECONDS] = v.coerceIn(MINDFUL_SECONDS_RANGE) }
     }
 
     suspend fun setHapticsEnabled(v: Boolean) {

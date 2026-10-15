@@ -58,7 +58,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import dev.victorialauncher.TypedKey
 import dev.victorialauncher.VictoriaApp
 import dev.victorialauncher.data.AppInfo
+import dev.victorialauncher.data.DEFAULT_MINDFUL_SECONDS
 import dev.victorialauncher.data.EntryKind
+import dev.victorialauncher.data.MindfulTally
 import dev.victorialauncher.data.restoreConcealed
 import dev.victorialauncher.data.AzStripVisibility
 import dev.victorialauncher.data.EdgeSide
@@ -95,6 +97,7 @@ import androidx.compose.runtime.Immutable
 import android.content.res.Configuration
 import android.net.Uri
 import dev.victorialauncher.R
+import java.time.LocalDate
 
 /** Width of the invisible strip at each screen edge that opens the app list. */
 /** Android only honors this much gesture exclusion per side, so spend it on the strip. */
@@ -260,6 +263,15 @@ fun HomeRoute(
     var homeEditMode by remember { mutableStateOf(false) }
     var folderPickerFor by remember { mutableStateOf<AppInfo?>(null) }
 
+    // Read here, where every launch passes through and has to know at once whether to stop.
+    // The tally too, though only the pause shows it: collected there, it would first draw the
+    // empty start value and then jump to today's numbers a frame later.
+    val mindfulApps by app.prefs.mindfulApps.collectAsState(initial = emptySet())
+    val mindfulTally by app.prefs.mindfulTally.collectAsState(initial = emptyMap())
+    val mindfulSeconds by app.prefs.mindfulSeconds.collectAsState(initial = DEFAULT_MINDFUL_SECONDS)
+    // The app waiting behind a pause, or null while there is none on screen.
+    var mindfulFor by remember { mutableStateOf<AppInfo?>(null) }
+
     val nowPlaying by NowPlayingBus.state.collectAsState()
     // Asked again each time the launcher comes back to the front, not only on HOME. Access is
     // granted on a system screen, and coming back from it with BACK left this stale: with access
@@ -339,7 +351,7 @@ fun HomeRoute(
         if (typedToSearch.isEmpty()) return@LaunchedEffect
         val taken = typedToSearch
         onTypedToSearchHandled(taken)
-        if (!settings.appListSearch || homeEditMode || bandEditMode) return@LaunchedEffect
+        if (!settings.appListSearch || homeEditMode || bandEditMode || mindfulFor != null) return@LaunchedEffect
         if (!appListVisible) {
             appListVisible = true
             openAnim.snapTo(openDistancePx)
@@ -377,16 +389,33 @@ fun HomeRoute(
     // The one place a row press is turned into something happening. Every row in the launcher
     // arrives here, so a row that is not an app is recognised once, here, rather than in each
     // of the four places a press is wired up.
-    fun launchEntry(entry: AppInfo): Boolean = when (entry.kind) {
+    fun launchEntry(entry: AppInfo): Boolean = when {
         // Handed off rather than done here: locking or unlocking is several binder calls and
         // possibly the system's own authentication screen, which is not a press's work to do
         // on the main thread. True because the press was acted on — there is simply nothing
         // coming to the foreground to wait for.
-        EntryKind.PRIVATE_SPACE -> {
+        entry.kind == EntryKind.PRIVATE_SPACE -> {
             onTogglePrivateSpace()
             true
         }
+        // An app marked to pause waits behind the pause instead, which opens it from there if
+        // the answer is still yes. False because nothing is coming to the foreground yet, so
+        // the list is put away as after a launch that did not happen, and the pause stands
+        // over the home screen rather than over the list. Edit layout is never interrupted.
+        entry.key in mindfulApps && !homeEditMode && !bandEditMode -> {
+            mindfulFor = entry
+            false
+        }
         else -> app.appRepository.launch(entry)
+    }
+
+    // How a pause ends: opened anyway, or let go. Counted on the day it ended either way.
+    fun endPause(open: Boolean) {
+        val entry = mindfulFor ?: return
+        mindfulFor = null
+        val day = LocalDate.now().toEpochDay()
+        scope.launch { app.prefs.recordMindful(entry.key, day, opened = open) }
+        if (open) app.appRepository.launch(entry) else closeAppList()
     }
 
     LaunchedEffect(settings.edgeSide) { scrub.syncRestingSide(settings.edgeSide) }
@@ -444,8 +473,12 @@ fun HomeRoute(
                 // real departure.
                 // Used up by the pause it was set for, so it excuses that one and never a
                 // later departure.
-                Lifecycle.Event.ON_PAUSE ->
+                Lifecycle.Event.ON_PAUSE -> {
+                    // Left rather than answered: the screen going off or a call coming in
+                    // decided nothing, so the pause goes without being counted either way.
+                    mindfulFor = null
                     if (keepListThroughPause) keepListThroughPause = false else closeAppList(snap = true)
+                }
                 Lifecycle.Event.ON_RESUME -> {
                     keepListThroughPause = false
                     listenerGranted = isListenerEnabled(context)
@@ -457,7 +490,11 @@ fun HomeRoute(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(homeIntentTick) {
-        if (homeIntentTick > 0) closeAppList(snap = true)
+        if (homeIntentTick > 0) {
+            // HOME over a pause is going home instead, which is what Never mind does.
+            endPause(open = false)
+            closeAppList(snap = true)
+        }
     }
 
     // The gap left for the back gesture, per side. Followed from the system when automatic,
@@ -818,6 +855,8 @@ fun HomeRoute(
                 onOpenSettings = { onNavigate("settings") },
                 canUninstall = { app.appRepository.canUninstall(it) },
                 onUninstall = { app.appRepository.uninstall(it) },
+                mindfulApps = mindfulApps,
+                onSetMindful = { appInfo, pause -> scope.launch { app.prefs.setMindful(appInfo.key, pause) } },
             )
         }
 
@@ -927,6 +966,8 @@ fun HomeRoute(
                 iconSide = settings.iconSide,
                 canUninstall = { app.appRepository.canUninstall(it) },
                 onUninstall = { app.appRepository.uninstall(it) },
+                mindfulApps = mindfulApps,
+                onSetMindful = { appInfo, pause -> scope.launch { app.prefs.setMindful(appInfo.key, pause) } },
             )
         }
 
@@ -1050,6 +1091,22 @@ fun HomeRoute(
                     ),
                 )
             }
+        }
+
+        // Last, so it lies over everything, the edge zones included: a finger on the edge must
+        // not open the list from under a pause that is still waiting for an answer.
+        mindfulFor?.let { entry ->
+            val today = remember(entry.key) { LocalDate.now().toEpochDay() }
+            MindfulPause(
+                app = entry,
+                label = nameOverrides[entry.key] ?: entry.label,
+                seconds = mindfulSeconds,
+                day = MindfulTally.read(mindfulTally[entry.key], today),
+                epochDay = today,
+                scrimColor = Color(settings.dimColor),
+                onNeverMind = { endPause(open = false) },
+                onOpen = { endPause(open = true) },
+            )
         }
     }
 }

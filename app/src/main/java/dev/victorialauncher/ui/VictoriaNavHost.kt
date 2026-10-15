@@ -1050,6 +1050,29 @@ fun VictoriaNavHost(
             )
         }
 
+        composable("settings/mindful") {
+            // Collected here rather than with the rest above: nothing but this screen and the
+            // home destination, which reads it for itself, has any use for it.
+            val mindfulApps by app.prefs.mindfulApps.collectAsState(initial = emptySet())
+            HiddenAppsScreen(
+                // What a press opens, which is all a pause can stand in front of. The private
+                // space row locks and unlocks instead.
+                allApps = remember(allApps) {
+                    allApps.filter { it.kind == EntryKind.APP || it.kind == EntryKind.SHORTCUT }
+                },
+                hiddenApps = mindfulApps,
+                nameOverrides = nameOverrides,
+                iconSizeDp = iconSizeDp,
+                onToggleHidden = { appInfo, pause ->
+                    scope.launch { app.prefs.setMindful(appInfo.key, pause) }
+                },
+                onBack = { navController.popBackStack() },
+                titleRes = R.string.settings_mindful_apps,
+                countRes = R.string.mindful_picker_count,
+                addRes = R.string.mindful_picker_add,
+            )
+        }
+
         composable("iconpicker/{key}") { entry ->
             val key = entry.arguments?.getString("key")?.let { Uri.decode(it) }.orEmpty()
             val folderId = folderIdFromToken(key)

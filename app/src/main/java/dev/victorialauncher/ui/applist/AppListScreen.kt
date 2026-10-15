@@ -64,6 +64,8 @@ import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TimerOff
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -275,6 +277,9 @@ fun AppListScreen(
      */
     canUninstall: (AppInfo) -> Boolean = { false },
     onUninstall: (AppInfo) -> Unit = {},
+    /** Which apps pause before they open, so a row's menu can offer to start or stop it. */
+    mindfulApps: Set<String> = emptySet(),
+    onSetMindful: (AppInfo, Boolean) -> Unit = { _, _ -> },
 ) {
     // Appended at the point of showing rather than stored in the label, so a rename still
     // wins and turning this off needs no re-reading of every app.
@@ -1259,6 +1264,8 @@ fun AppListScreen(
                         onHide = { onHideApp(row.app, row.app.key !in hiddenApps) },
                         isHidden = row.app.key in hiddenApps,
                         onMoveToFolder = { onMoveToFolder(row.app) },
+                        isMindful = row.app.key in mindfulApps,
+                        onToggleMindful = { onSetMindful(row.app, row.app.key !in mindfulApps) },
                     )
                 }
                 }
@@ -1436,6 +1443,8 @@ private fun AppRow(
     onMoveToFolder: () -> Unit,
     /** Hidden apps only ever reach this list through a search. */
     isHidden: Boolean,
+    isMindful: Boolean,
+    onToggleMindful: () -> Unit,
 ) {
     // Same press treatment as the home screen: the stock ripple all but vanishes against a
     // wallpaper, and without any feedback a tap that did register reads as one that didn't.
@@ -1601,6 +1610,26 @@ private fun AppRow(
                 },
                 onClick = { onDismissMenu(); onHide() },
             )
+            // Anything a press opens can be made to wait. Not the private space row: a press
+            // there locks or unlocks, and there is nothing to think twice about opening.
+            if (app.kind == EntryKind.APP || app.kind == EntryKind.SHORTCUT) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(
+                                if (isMindful) R.string.action_stop_pausing else R.string.action_pause_before_opening
+                            )
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            if (isMindful) Icons.Filled.TimerOff else Icons.Filled.Timer,
+                            contentDescription = null,
+                        )
+                    },
+                    onClick = { onDismissMenu(); onToggleMindful() },
+                )
+            }
         }
     }
 }

@@ -241,8 +241,11 @@ fun buildAppListModel(
  * The same list with only the entries [match] accepts, and only the headers still holding
  * something. Rebuilt rather than filtered in place: letterIndex stores row indices, so
  * removing any row invalidates every index after it.
+ *
+ * Asked about the row rather than the app, so the answer can depend on where in the list an
+ * app is shown as well as on which app it is.
  */
-fun AppListModel.filtered(match: (AppInfo) -> Boolean): AppListModel {
+fun AppListModel.filtered(match: (AppListRow.Entry) -> Boolean): AppListModel {
     val kept = mutableListOf<AppListRow>()
     val newIndex = mutableListOf<Pair<Char, Int>>()
     var pendingHeader: AppListRow.Header? = null
@@ -262,7 +265,7 @@ fun AppListModel.filtered(match: (AppInfo) -> Boolean): AppListModel {
         }
         when (row) {
             is AppListRow.Header -> pendingHeader = row
-            is AppListRow.Entry -> if (match(row.app)) {
+            is AppListRow.Entry -> if (match(row)) {
                 // Recorded before the heading is added, so the letter points at the heading
                 // where there is one and at its first app where there is not.
                 if (!letterKept) {

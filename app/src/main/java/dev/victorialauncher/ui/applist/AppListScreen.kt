@@ -306,13 +306,18 @@ fun AppListScreen(
         } else {
             val term = query.trim()
             searchModel
-                .filtered { app ->
-                    displayName(app).contains(term, ignoreCase = true) ||
-                        // An app names itself in the language of the device, so on a Japanese
-                        // phone Settings calls itself 設定 and no amount of typing "settings"
-                        // reaches it. Package names are ASCII almost without exception, so the
-                        // English word is usually sitting right there in com.android.settings.
-                        app.componentName.packageName.contains(term, ignoreCase = true)
+                .filtered { row ->
+                    val app = row.app
+                    // Each app once. One under "Recently installed" is under its own letter as
+                    // well, and was found twice, once for each place the list happens to show it.
+                    row.section != RECENT_SECTION && (
+                        displayName(app).contains(term, ignoreCase = true) ||
+                            // An app names itself in the language of the device, so on a Japanese
+                            // phone Settings calls itself 設定 and no amount of typing "settings"
+                            // reaches it. Package names are ASCII almost without exception, so the
+                            // English word is usually sitting right there in com.android.settings.
+                            app.componentName.packageName.contains(term, ignoreCase = true)
+                        )
                 }
                 .rankedBy { searchRank(displayName(it), it.componentName.packageName, term) }
         }
@@ -996,6 +1001,8 @@ fun AppListScreen(
     }
 
     // Long-press anywhere in the list (not just favorites) to edit that app.
+    // Which row's menu is open, by the row's own key rather than the app's: an app listed under
+    // its letter and again under a section had both of its menus open at once.
     var menuForKey by remember { mutableStateOf<String?>(null) }
     var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var editDialogFor by remember { mutableStateOf<AppInfo?>(null) }
@@ -1221,13 +1228,7 @@ fun AppListScreen(
                 items = displayModel.rows,
                 // The section is part of the key because the same app legitimately appears
                 // twice: once under its letter and again under a section that repeats it.
-                key = { _, row ->
-                    when (row) {
-                        is AppListRow.Header -> "header:${row.text}"
-                        is AppListRow.Entry ->
-                            row.section?.let { "$it:${row.app.key}" } ?: row.app.key
-                    }
-                },
+                key = { _, row -> rowKey(row) },
                 // Headers and app rows are laid out nothing alike; telling the list so lets
                 // it reuse each kind against its own pool while scrubbing.
                 contentType = { _, row -> row is AppListRow.Header },
@@ -1252,11 +1253,11 @@ fun AppListScreen(
                         iconSizeDp = iconSizeDp,
                         labelSizeSp = labelSizeSp,
                         isFavorite = favoriteKeys.contains(row.app.key),
-                        menuExpanded = menuForKey == row.app.key,
+                        menuExpanded = menuForKey == rowKey(row),
                         menuOffset = menuOffset,
                         touchPosition = touchPosition,
                         onLaunch = { onLaunch(row.app) },
-                        onLongPress = { offset -> menuOffset = offset; menuForKey = row.app.key },
+                        onLongPress = { offset -> menuOffset = offset; menuForKey = rowKey(row) },
                         onDismissMenu = { menuForKey = null },
                         onSetFavorite = { onSetFavorite(row.app, it) },
                         onEdit = { editDialogFor = row.app },
@@ -1386,6 +1387,12 @@ fun AppListScreen(
       }
     }
     }
+}
+
+/** The row's key in the list, unique even where one app is listed twice. */
+private fun rowKey(row: AppListRow): String = when (row) {
+    is AppListRow.Header -> "header:${row.text}"
+    is AppListRow.Entry -> row.section?.let { "$it:${row.app.key}" } ?: row.app.key
 }
 
 @Composable

@@ -477,11 +477,15 @@ fun HomeRoute(
                 // real departure.
                 // Used up by the pause it was set for, so it excuses that one and never a
                 // later departure.
-                Lifecycle.Event.ON_PAUSE -> {
-                    // Left rather than answered: the screen going off or a call coming in
-                    // decided nothing, so the pause goes without being counted either way.
-                    mindfulFor = null
+                Lifecycle.Event.ON_PAUSE ->
                     if (keepListThroughPause) keepListThroughPause = false else closeAppList(snap = true)
+                // Left rather than answered: the screen going off, a call or another app coming
+                // in decided nothing, so the pause goes without being counted either way. Not on
+                // ON_PAUSE: HOME brings one too, since Android pauses an activity before handing
+                // it a new intent, and HOME over a pause is an answer, counted where
+                // homeIntentTick arrives below.
+                Lifecycle.Event.ON_STOP -> {
+                    mindfulFor = null
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     keepListThroughPause = false

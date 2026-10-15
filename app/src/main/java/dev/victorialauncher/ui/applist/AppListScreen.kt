@@ -1007,11 +1007,13 @@ fun AppListScreen(
     // the list scrolls into view. Left standing when the menu closes, so the item does not
     // drop out of a menu still fading away, and answered no again for the next app until asked.
     var menuApp by remember { mutableStateOf<AppInfo?>(null) }
-    val menuAppUninstallable by produceState(initialValue = false, menuApp) {
-        // Cleared first, so the last app's answer never stands in for this one's while it is asked.
-        value = false
+    // The key of the app the yes belongs to rather than a bare yes. The question is asked again
+    // only after the frame that opens the next app's menu has been composed, and a bare yes left
+    // from the last app would offer Uninstall in that frame for an app that may have none.
+    val uninstallableKey by produceState<String?>(initialValue = null, menuApp) {
+        value = null
         val target = menuApp ?: return@produceState
-        value = withContext(Dispatchers.Default) { canUninstall(target) }
+        if (withContext(Dispatchers.Default) { canUninstall(target) }) value = target.key
     }
 
     // The vertical span the rows actually occupy. A tap inside it belongs to the list even
@@ -1273,7 +1275,7 @@ fun AppListScreen(
                         onSetFavorite = { onSetFavorite(row.app, it) },
                         onEdit = { editDialogFor = row.app },
                         onAppInfo = { onAppInfo(row.app) },
-                        uninstallable = menuAppUninstallable && menuApp?.key == row.app.key,
+                        uninstallable = uninstallableKey == row.app.key,
                         onUninstall = { onUninstall(row.app) },
                         onUnpin = { onUnpinShortcut(row.app) },
                         onHide = { onHideApp(row.app, row.app.key !in hiddenApps) },

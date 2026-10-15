@@ -1236,11 +1236,22 @@ fun AppListScreen(
                 contentType = { _, row -> row is AppListRow.Header },
             ) { index, row ->
                 Box(
-                    // Read in the draw phase on purpose: the scrub fade would otherwise
-                    // recompose every visible row on every frame of the 180ms tween.
-                    modifier = Modifier.graphicsLayer {
-                        alpha = if (index in highlightRange) 1f else othersAlpha
-                    },
+                    modifier = Modifier
+                        // Set apart, as the settings row is: filed under no letter, the padlock
+                        // otherwise read as the last app of whichever letter or section ended
+                        // the list, under a "Z" or "Recently installed" heading (#120).
+                        .then(
+                            if (index > 0 && row is AppListRow.Entry && listedLast(row.app.kind)) {
+                                Modifier.padding(top = SETTINGS_ROW_GAP)
+                            } else {
+                                Modifier
+                            }
+                        )
+                        // Read in the draw phase on purpose: the scrub fade would otherwise
+                        // recompose every visible row on every frame of the 180ms tween.
+                        .graphicsLayer {
+                            alpha = if (index in highlightRange) 1f else othersAlpha
+                        },
                 ) {
                 when (row) {
                     is AppListRow.Header -> SectionHeader(row.text, labelSizeSp, contentColor, alignment)

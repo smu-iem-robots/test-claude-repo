@@ -280,9 +280,14 @@ fun AppListModel.filtered(match: (AppListRow.Entry) -> Boolean): AppListModel {
         when (row) {
             is AppListRow.Header -> pendingHeader = row
             is AppListRow.Entry -> if (match(row)) {
-                // Recorded before the heading is added, so the letter points at the heading
-                // where there is one and at its first app where there is not.
-                if (!letterKept) {
+                if (listedLast(row.app.kind)) {
+                    // Under no heading and no letter in the full list, so under none here: the
+                    // heading last passed belongs to rows above it that the query left out, and
+                    // a search for the padlock came back under "Z" or "Recently installed".
+                    pendingHeader = null
+                } else if (!letterKept) {
+                    // Recorded before the heading is added, so the letter points at the heading
+                    // where there is one and at its first app where there is not.
                     letter?.let { newIndex += it to kept.size }
                     letterKept = true
                 }

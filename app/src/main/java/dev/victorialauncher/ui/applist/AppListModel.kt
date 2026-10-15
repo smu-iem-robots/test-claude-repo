@@ -3,6 +3,7 @@ package dev.victorialauncher.ui.applist
 
 import androidx.compose.runtime.Immutable
 import dev.victorialauncher.data.AppInfo
+import dev.victorialauncher.data.EntryKind
 import android.icu.text.Transliterator
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -192,7 +193,8 @@ fun buildAppListModel(
     /** Heading and how many, for a section of what was installed most recently. */
     recentSection: Pair<String, Int>? = null,
 ): AppListModel {
-    val all = apps.filter { it.key !in hidden }
+    // Out of the alphabet before anything is filed; see listedLast.
+    val (trailing, all) = apps.filter { it.key !in hidden }.partition { listedLast(it.kind) }
     // Lifted out of the alphabet entirely rather than listed twice. A private app and its main
     // profile twin have the same name, which is the whole reason for asking.
     val visible = if (privateSectionLabel == null) all else all.filterNot { it.privateProfile }
@@ -234,8 +236,20 @@ fun buildAppListModel(
         }
     }
 
+    // After the sections as well, so it is the last thing in the list whatever else is shown.
+    // No heading: the row names itself, and a heading over it would say the same words again.
+    trailing.forEach { rows += AppListRow.Entry(it) }
+
     return AppListModel(rows, letterIndex)
 }
+
+/**
+ * Whether a row goes at the very end of the list rather than under a letter.
+ *
+ * Only the private space's padlock does. It is a switch, not an app, and filed by its name it
+ * sat in P among the apps, and could put a P on the strip of a phone with no app there (#120).
+ */
+internal fun listedLast(kind: EntryKind): Boolean = kind == EntryKind.PRIVATE_SPACE
 
 /**
  * The same list with only the entries [match] accepts, and only the headers still holding

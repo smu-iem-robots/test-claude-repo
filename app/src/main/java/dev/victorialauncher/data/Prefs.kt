@@ -179,7 +179,7 @@ class Prefs(private val context: Context) {
         val SECTION_TOP_PERCENT = intPreferencesKey("section_top_percent")
         val CLOSE_FOLDER_ON_LAUNCH = booleanPreferencesKey("close_folder_on_launch")
         val SHOW_SETTINGS_ROW = booleanPreferencesKey("show_settings_row")
-        val CORNER_BUTTON_KEY = stringPreferencesKey("corner_button_key")
+        val CORNER_BUTTON_KEY = stringPreferencesKey(PREF_CORNER_BUTTON)
         val AUTO_KEYBOARD = booleanPreferencesKey("auto_keyboard")
         val LAST_LETTER_TO_LINE = booleanPreferencesKey("last_letter_to_line")
         val FAVORITES_EVER_SET = booleanPreferencesKey("favorites_ever_set")

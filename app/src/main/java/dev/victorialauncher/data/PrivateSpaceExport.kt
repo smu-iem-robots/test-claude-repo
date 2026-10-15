@@ -27,6 +27,7 @@ internal const val PREF_ICON_OVERRIDES = "icon_overrides_json"
 internal const val PREF_LAUNCH_COUNTS = "launch_counts_json"
 internal const val PREF_QUICK_LAUNCH_LEFT = "quick_launch_left_key"
 internal const val PREF_QUICK_LAUNCH_RIGHT = "quick_launch_right_key"
+internal const val PREF_CORNER_BUTTON = "corner_button_key"
 
 /**
  * Strips every second profile's keys out of one stored preference's value, given the DataStore
@@ -45,11 +46,11 @@ internal const val PREF_QUICK_LAUNCH_RIGHT = "quick_launch_right_key"
  * profile is which before it can be safe.
  *
  * Returns the value to export, or null when the whole entry should be dropped rather than kept
- * empty — a quick-launch slot pointed at a private app has nothing left to point at once that
- * app is gone from the backup. Every other shape stays present even when everything is stripped
- * out of it: an all-private favorites list exports as an empty one, and a folder every one of
- * whose members was private stays a folder, just an empty one, because the folder itself (its
- * name, its icon) is the user's, not a secret.
+ * empty — a quick-launch slot or the corner button pointed at a private app has nothing left
+ * to point at once that app is gone from the backup. Every other shape stays present even when
+ * everything is stripped out of it: an all-private favorites list exports as an empty one, and a
+ * folder every one of whose members was private stays a folder, just an empty one, because the
+ * folder itself (its name, its icon) is the user's, not a secret.
  *
  * A preference name this doesn't recognize, and a value with no second profile's key in it,
  * comes back as exactly the object it was handed — never a rebuilt copy — so an export from a
@@ -68,7 +69,7 @@ fun stripPrivateSpaceFromExport(name: String, value: Any, stripOtherProfiles: Bo
         PREF_FOLDERS -> (value as? String)?.let { stripFoldersJson(it, isPrivate) } ?: value
         PREF_NAME_OVERRIDES, PREF_ICON_OVERRIDES, PREF_LAUNCH_COUNTS ->
             (value as? String)?.let { stripJsonMap(it, isPrivate) } ?: value
-        PREF_QUICK_LAUNCH_LEFT, PREF_QUICK_LAUNCH_RIGHT -> {
+        PREF_QUICK_LAUNCH_LEFT, PREF_QUICK_LAUNCH_RIGHT, PREF_CORNER_BUTTON -> {
             // Not `?.let { ... } ?: value`: that Elvis would mistake the deliberate null this
             // branch can return (drop the slot) for the cast having failed, and hand the
             // private key straight back out.

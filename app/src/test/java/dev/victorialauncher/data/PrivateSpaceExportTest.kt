@@ -137,6 +137,21 @@ class PrivateSpaceExportTest {
         assertEquals(a, stripPrivateSpaceFromExport("quick_launch_left_key", a, strip))
     }
 
+    // --- corner_button_key (a single key, the search entry, or absent) ----------------------
+
+    @Test
+    fun `a corner button holding a private key is left out entirely`() {
+        assertNull(stripPrivateSpaceFromExport("corner_button_key", bPrivate, strip))
+        val privateShortcut = EntryKeys.shortcut("com.x", "id", userSerial = privateSerial)
+        assertNull(stripPrivateSpaceFromExport("corner_button_key", privateShortcut, strip))
+    }
+
+    @Test
+    fun `a corner button holding an ordinary key or the search survives`() {
+        assertEquals(a, stripPrivateSpaceFromExport("corner_button_key", a, strip))
+        assertEquals(EntryKeys.SEARCH, stripPrivateSpaceFromExport("corner_button_key", EntryKeys.SEARCH, strip))
+    }
+
     // --- cross-cutting behavior ---------------------------------------------------------------
 
     @Test

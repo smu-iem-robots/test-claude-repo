@@ -13,6 +13,9 @@ import androidx.compose.runtime.Composable
  * the icon picker already reach it — so a feature keeps its settings beside the rest of its
  * code. They are still ordinary [SettingsEntry] rows, so the search box finds them and each
  * one lands in the section it names, after the rows already there.
+ *
+ * [onOpenRoute] navigates to a destination registered in VictoriaNavHost, for a row that
+ * opens a screen of its own.
  */
 @Composable
-internal fun extraSettingsEntries(): List<SettingsEntry> = emptyList()
+internal fun extraSettingsEntries(onOpenRoute: (String) -> Unit): List<SettingsEntry> = emptyList()

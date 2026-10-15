@@ -928,6 +928,7 @@ fun VictoriaNavHost(
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     )
                 },
+                onOpenRoute = { route -> navController.navigate(route) },
                 onBack = { navController.popBackStack() },
             )
         }

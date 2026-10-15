@@ -255,6 +255,8 @@ fun SettingsScreen(
     onOpenFrequentExcluded: () -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
+    /** Opens a destination by route, for the rows in [extraSettingsEntries]. */
+    onOpenRoute: (String) -> Unit,
     onBack: () -> Unit,
 ) {
     val surface = MaterialTheme.colorScheme.surface
@@ -884,7 +886,7 @@ fun SettingsScreen(
         },
         // Rows that read and write their own settings rather than arriving as parameters; see
         // ExtraSettings.kt for why.
-    ) + extraSettingsEntries()).filter { it.visible }
+    ) + extraSettingsEntries(onOpenRoute)).filter { it.visible }
 
     // What the list below actually draws: the matches while something is typed, the open
     // section otherwise, and nothing at all on the top menu.

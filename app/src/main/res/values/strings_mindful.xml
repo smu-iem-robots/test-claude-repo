@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Uninstall, from an app's long-press menu -->
+    <string name="action_uninstall">Uninstall</string>
+    <string name="uninstall_failed">Couldn\'t open the uninstaller</string>
+</resources>

@@ -17,6 +17,11 @@
          and the space can never be unlocked from here. Granted at install time, no prompt,
          and it only takes effect while this launcher holds the home role. -->
     <uses-permission android:name="android.permission.ACCESS_HIDDEN_PROFILES" />
+    <!-- Lets Uninstall in the long-press menu hand an app to the system's own uninstall
+         confirmation, which is still what asks and what removes it. A normal permission,
+         granted at install with no prompt. Since Android 9 the uninstaller closes without
+         showing anything when an app that targets Android 9 or later asks without it. -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <!-- Asked for at the moment the clock widget is set to show what is coming up, never at
          install. Read only, and nothing read here leaves the phone: there is no network

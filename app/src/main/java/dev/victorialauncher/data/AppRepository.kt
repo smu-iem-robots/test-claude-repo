@@ -4,6 +4,7 @@ package dev.victorialauncher.data
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.content.pm.ShortcutInfo
@@ -699,5 +700,46 @@ class AppRepository(
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         runCatching { context.startActivity(intent) }
+    }
+
+    /**
+     * Whether the system will let this app be uninstalled, so a menu offers it only where it
+     * can be done. A binder call: ask it off the main thread.
+     *
+     * A system app that has never been updated is part of the firmware, and the uninstaller
+     * can only refuse it. One that has been updated is offered, because the same screen then
+     * removes the update and puts the factory version back. Read for the app's own profile —
+     * a work or private copy is a separate install with flags of its own — and when nothing
+     * can be read, the answer is no rather than an item that leads nowhere.
+     */
+    fun canUninstall(app: AppInfo): Boolean {
+        if (app.kind != EntryKind.APP) return false
+        val pkg = app.componentName.packageName
+        if (pkg == context.packageName) return false
+        val mainUser = Process.myUserHandle()
+        val user = app.user ?: mainUser
+        val info = runCatching { launcherApps.getApplicationInfo(pkg, 0, user) }.getOrNull()
+            ?: (if (user == mainUser) runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() else null)
+            ?: return false
+        val system = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+        val updated = (info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+        return !system || updated
+    }
+
+    /**
+     * Hands the app to the system's own uninstall confirmation, which is what removes it; the
+     * list follows once it has gone, through the package callbacks already watching for that.
+     */
+    fun uninstall(app: AppInfo) {
+        if (app.kind != EntryKind.APP) return
+        val intent = Intent(Intent.ACTION_DELETE, Uri.fromParts("package", app.componentName.packageName, null))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // Without it the uninstaller looks for the package in our own profile, and a work or
+        // private copy is either not found there or, worse, the main one is offered instead.
+        val user = app.user
+        if (user != null && user != Process.myUserHandle()) intent.putExtra(Intent.EXTRA_USER, user)
+        runCatching { context.startActivity(intent) }.onFailure {
+            Toast.makeText(context, R.string.uninstall_failed, Toast.LENGTH_SHORT).show()
+        }
     }
 }

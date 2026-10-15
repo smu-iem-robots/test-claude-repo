@@ -53,6 +53,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Edit
@@ -85,6 +86,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -134,7 +136,9 @@ import dev.victorialauncher.ui.common.FolderIconImage
 import dev.victorialauncher.ui.common.recordTouchPosition
 import dev.victorialauncher.widget.WidgetSlot
 import dev.victorialauncher.widget.WidgetSlotActions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import dev.victorialauncher.R
@@ -268,6 +272,12 @@ fun HomeScreen(
     /** True when the corner opens the app list's search rather than launching anything. */
     cornerButtonIsSearch: Boolean,
     onOpenCornerSearch: () -> Unit,
+    /**
+     * Whether a favorite's app may be uninstalled. A binder call, so it is asked off the main
+     * thread and only for the favorite whose menu is open.
+     */
+    canUninstall: (AppInfo) -> Boolean = { false },
+    onUninstall: (AppInfo) -> Unit = {},
 ) {    // Appended at the point of showing rather than stored in the label, so a rename still
     // wins and turning this off needs no re-reading of every app.
     val workSuffix = stringResource(R.string.app_work_suffix)
@@ -1111,6 +1121,8 @@ fun HomeScreen(
                             onMoveToFolder = { menuForKey = null; onMoveToFolder(item.app) },
                             onEditLayout = { menuForKey = null; onEditModeChange(true) },
                             onAppInfo = { menuForKey = null; onAppInfo(item.app) },
+                            canUninstall = { canUninstall(item.app) },
+                            onUninstall = { menuForKey = null; onUninstall(item.app) },
                             onUnpin = { menuForKey = null; onUnpinShortcut(item.app) },
                             onRemove = { menuForKey = null; onRemoveFavorite(item.app) },
                             onEditIconName = { menuForKey = null; renameDialogFor = item.app },
@@ -1299,6 +1311,8 @@ private fun FavoriteRow(
     onMoveToFolder: () -> Unit,
     onEditLayout: () -> Unit,
     onAppInfo: () -> Unit,
+    canUninstall: () -> Boolean,
+    onUninstall: () -> Unit,
     onUnpin: () -> Unit,
     onRemove: () -> Unit,
     onEditIconName: () -> Unit,
@@ -1308,6 +1322,11 @@ private fun FavoriteRow(
     val pressed by interaction.collectIsPressedAsState()
     val density = LocalDensity.current
     var shortcutMenu by remember { mutableStateOf(false) }
+    // Asked as the menu opens rather than as the row is drawn. Kept once known instead of
+    // reset on close, so the item does not drop out of a menu that is still fading away.
+    val uninstallable by produceState(initialValue = false, menuExpanded, app) {
+        if (menuExpanded) value = withContext(Dispatchers.Default) { canUninstall() }
+    }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
@@ -1400,6 +1419,15 @@ private fun FavoriteRow(
                     text = { Text(stringResource(R.string.action_app_info)) },
                     leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null) },
                     onClick = onAppInfo,
+                )
+            }
+            // Not Remove below, which only takes the row off the home screen. Left out for an
+            // app the system will not remove, rather than offered and then refused.
+            if (app.kind == EntryKind.APP && uninstallable) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_uninstall)) },
+                    leadingIcon = { Icon(Icons.Filled.DeleteForever, contentDescription = null) },
+                    onClick = onUninstall,
                 )
             }
             // Distinct from Remove below, which only takes it off the home screen: this hands

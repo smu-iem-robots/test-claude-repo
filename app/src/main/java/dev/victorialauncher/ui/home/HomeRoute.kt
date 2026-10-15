@@ -816,6 +816,8 @@ fun HomeRoute(
                 onAppInfo = { app.appRepository.openAppInfo(it) },
                 onUnpinShortcut = { app.appRepository.unpin(it) },
                 onOpenSettings = { onNavigate("settings") },
+                canUninstall = { app.appRepository.canUninstall(it) },
+                onUninstall = { app.appRepository.uninstall(it) },
             )
         }
 
@@ -923,6 +925,8 @@ fun HomeRoute(
                 onQueryChange = { appListQuery = it },
                 alignment = settings.appListAlignment,
                 iconSide = settings.iconSide,
+                canUninstall = { app.appRepository.canUninstall(it) },
+                onUninstall = { app.appRepository.uninstall(it) },
             )
         }
 

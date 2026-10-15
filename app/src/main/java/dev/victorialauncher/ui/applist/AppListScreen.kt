@@ -57,6 +57,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LinkOff
@@ -81,6 +82,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.rememberCoroutineScope
@@ -126,8 +128,10 @@ import dev.victorialauncher.ui.common.swipeForShortcuts
 import dev.victorialauncher.ui.common.LocalIconConfig
 import dev.victorialauncher.ui.common.recordTouchPosition
 import dev.victorialauncher.ui.common.EditAppDialog
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
 import kotlin.math.abs
@@ -265,6 +269,12 @@ fun AppListScreen(
     onQueryChange: (String) -> Unit,
     alignment: HomeAlignment,
     iconSide: IconSide,
+    /**
+     * Whether a row's app may be uninstalled. A binder call, so it is asked off the main thread
+     * and only for the row whose menu is open, never for every row the list draws.
+     */
+    canUninstall: (AppInfo) -> Boolean = { false },
+    onUninstall: (AppInfo) -> Unit = {},
 ) {
     // Appended at the point of showing rather than stored in the label, so a rename still
     // wins and turning this off needs no re-reading of every app.
@@ -1243,6 +1253,8 @@ fun AppListScreen(
                         onSetFavorite = { onSetFavorite(row.app, it) },
                         onEdit = { editDialogFor = row.app },
                         onAppInfo = { onAppInfo(row.app) },
+                        canUninstall = { canUninstall(row.app) },
+                        onUninstall = { onUninstall(row.app) },
                         onUnpin = { onUnpinShortcut(row.app) },
                         onHide = { onHideApp(row.app, row.app.key !in hiddenApps) },
                         isHidden = row.app.key in hiddenApps,
@@ -1417,6 +1429,8 @@ private fun AppRow(
     onSetFavorite: (Boolean) -> Unit,
     onEdit: () -> Unit,
     onAppInfo: () -> Unit,
+    canUninstall: () -> Boolean,
+    onUninstall: () -> Unit,
     onUnpin: () -> Unit,
     onHide: () -> Unit,
     onMoveToFolder: () -> Unit,
@@ -1429,6 +1443,11 @@ private fun AppRow(
     val pressed by interaction.collectIsPressedAsState()
     val density = LocalDensity.current
     var shortcutMenu by remember { mutableStateOf(false) }
+    // Asked as the menu opens rather than as the row is drawn. Kept once known instead of
+    // reset on close, so the item does not drop out of a menu that is still fading away.
+    val uninstallable by produceState(initialValue = false, menuExpanded, app) {
+        if (menuExpanded) value = withContext(Dispatchers.Default) { canUninstall() }
+    }
 
     Box {
         Row(
@@ -1541,6 +1560,15 @@ private fun AppRow(
                     text = { Text(stringResource(R.string.action_app_info)) },
                     leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null) },
                     onClick = { onDismissMenu(); onAppInfo() },
+                )
+            }
+            // Left out for an app the system will not remove, such as one that came with the
+            // phone and was never updated, rather than offered and then refused.
+            if (app.kind == EntryKind.APP && uninstallable) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_uninstall)) },
+                    leadingIcon = { Icon(Icons.Filled.DeleteForever, contentDescription = null) },
+                    onClick = { onDismissMenu(); onUninstall() },
                 )
             }
             // Hands the shortcut back to the app that pinned it, which is the only way one

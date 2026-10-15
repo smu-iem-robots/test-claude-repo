@@ -300,7 +300,9 @@ fun AppListScreen(
     // The touch zone is there with the letters hidden, so what has to be cleared is its
     // width, never mind whether anything is drawn in it.
     val stripInset = maxOf(STRIP_INSET, edgeZoneWidthDp.dp)
-    val displayModel = remember(model, searchModel, query, searchEnabled) {
+    // Keyed on everything displayName reads as well, since the match is made against it: left
+    // out, a rename made while a query was up went on matching by the old name.
+    val displayModel = remember(model, searchModel, query, searchEnabled, nameOverrides, markWorkApps, workSuffix) {
         if (!searching) {
             model
         } else {

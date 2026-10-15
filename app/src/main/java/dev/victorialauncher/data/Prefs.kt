@@ -625,8 +625,9 @@ class Prefs(private val context: Context) {
     /**
      * Whether the letters at the end of the list reach the same line as the rest.
      *
-     * Off by default because the room they need is real: a screen's worth of empty space under
-     * the last app, which is there whenever the list is open rather than only when it is used.
+     * On by default. The room they need is real, empty space under the last app while one of
+     * them is placed, but it takes nothing else away, so an install that never chose is better
+     * off with it.
      */
     val lastLetterToLine: Flow<Boolean> =
         data.map { it[Keys.LAST_LETTER_TO_LINE] ?: true }.distinctUntilChanged()

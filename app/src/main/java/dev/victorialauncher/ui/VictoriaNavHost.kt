@@ -364,7 +364,7 @@ fun VictoriaNavHost(
     val showSettingsRow by app.prefs.showSettingsRow.collectAsState(initial = true)
     val cornerButtonKey by app.prefs.cornerButtonKey.collectAsState(initial = null)
     val autoKeyboard by app.prefs.autoKeyboard.collectAsState(initial = false)
-    val lastLetterToLine by app.prefs.lastLetterToLine.collectAsState(initial = false)
+    val lastLetterToLine by app.prefs.lastLetterToLine.collectAsState(initial = true)
     val showFavoriteIcons by app.prefs.showFavoriteIcons.collectAsState(initial = true)
     val favoritesSource by app.prefs.favoritesSource.collectAsState(initial = FavoritesSource.MANUAL)
     val frequentCount by app.prefs.frequentCount.collectAsState(initial = 6)

@@ -573,8 +573,11 @@ fun HomeScreen(
     // enough to show the last of them, clear of the navigation bar, and never so far that the
     // folder's own row leaves the top. Nothing moves if the stack was moved by anything else in
     // the meantime, since then someone already has it in hand.
-    val navigationBarBottomPx = WindowInsets.navigationBars.getBottom(density)
-    val statusBarTopPx = WindowInsets.statusBars.getTop(density)
+    // The bars are measured when the reveal runs rather than here. Read here, each time the
+    // status bar came or went, the app list's own hiding of it included, the whole home screen
+    // would recompose for numbers only this effect uses.
+    val navigationBarInsets = WindowInsets.navigationBars
+    val statusBarInsets = WindowInsets.statusBars
     val currentEditMode by rememberUpdatedState(editMode)
     LaunchedEffect(revealTick) {
         val folderId = revealFolderId
@@ -603,8 +606,8 @@ fun HomeScreen(
         val lift = folderRevealLiftPx(
             folderTopPx = top,
             folderBottomPx = bottom,
-            visibleTopPx = rootY + statusBarTopPx,
-            visibleBottomPx = rootY + viewportHeight - navigationBarBottomPx,
+            visibleTopPx = rootY + statusBarInsets.getTop(density),
+            visibleBottomPx = rootY + viewportHeight - navigationBarInsets.getBottom(density),
         )
         if (lift <= 0f) return@LaunchedEffect
         // Within the drag's own bounds, so the next drag does not snap it back.

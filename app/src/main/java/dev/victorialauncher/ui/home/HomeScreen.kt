@@ -34,9 +34,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -87,6 +89,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -281,6 +284,10 @@ fun HomeScreen(
     var nowPlayingMenu by remember { mutableStateOf(false) }
     var nowPlayingMenuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var expandedFolders by remember { mutableStateOf(setOf<String>()) }
+    // The folder last opened, and a count of the openings, so opening the same one again asks
+    // to see it again. See the reveal below.
+    var revealFolderId by remember { mutableStateOf<String?>(null) }
+    var revealTick by remember { mutableIntStateOf(0) }
     val touchPosition = remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current
     val view = LocalView.current
@@ -559,6 +566,56 @@ fun HomeScreen(
         // Subtracting the applied gap makes this idempotent, so it settles in one pass; the
         // guard only stops a rounding wobble from looping.
         if (abs(desiredDp - centeredFavTopDp) > 1) centeredFavTopDp = desiredDp
+    }
+
+    // A folder low on the screen opens downward, and its apps went off the bottom with nothing
+    // to say they were there (#114). Once it has finished opening, the stack is brought up far
+    // enough to show the last of them, clear of the navigation bar, and never so far that the
+    // folder's own row leaves the top. Nothing moves if the stack was moved by anything else in
+    // the meantime, since then someone already has it in hand.
+    val navigationBarBottomPx = WindowInsets.navigationBars.getBottom(density)
+    val statusBarTopPx = WindowInsets.statusBars.getTop(density)
+    val currentEditMode by rememberUpdatedState(editMode)
+    LaunchedEffect(revealTick) {
+        val folderId = revealFolderId
+        if (revealTick == 0 || folderId == null) return@LaunchedEffect
+        val key = folderToken(folderId)
+        val offsetAtStart = offsetY.value
+        // Finished once its foot has stayed put for a few frames, rather than after however long
+        // the expansion is supposed to take: that holds whatever the animation is, at whatever
+        // speed the system runs animations, and with a centered stack still settling around it.
+        val startedNanos = withFrameNanos { it }
+        var lastBottom = Float.NaN
+        var steadyFrames = 0
+        while (steadyFrames < REVEAL_STEADY_FRAMES) {
+            val now = withFrameNanos { it }
+            if (now - startedNanos > REVEAL_TIMEOUT_NANOS) break
+            val top = itemTops[key] ?: return@LaunchedEffect
+            val bottom = top + (itemHeights[key] ?: return@LaunchedEffect)
+            if (bottom == lastBottom) steadyFrames++ else steadyFrames = 0
+            lastBottom = bottom
+        }
+        if (currentEditMode || folderId !in expandedFolders || offsetY.value != offsetAtStart) {
+            return@LaunchedEffect
+        }
+        val top = itemTops[key] ?: return@LaunchedEffect
+        val bottom = top + (itemHeights[key] ?: return@LaunchedEffect)
+        val lift = folderRevealLiftPx(
+            folderTopPx = top,
+            folderBottomPx = bottom,
+            visibleTopPx = rootY + statusBarTopPx,
+            visibleBottomPx = rootY + viewportHeight - navigationBarBottomPx,
+        )
+        if (lift <= 0f) return@LaunchedEffect
+        // Within the drag's own bounds, so the next drag does not snap it back.
+        val floor = minOf(0f, (viewportHeight - contentHeight).toFloat())
+        offsetY.animateTo(
+            targetValue = (offsetY.value - lift).coerceIn(floor, 0f),
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+        )
     }
 
     // The rows take their style from the ambient one rather than naming it, so the shadow can
@@ -1000,6 +1057,10 @@ fun HomeScreen(
                                     expandedFolders - item.folder.id
                                 } else {
                                     expandedFolders + item.folder.id
+                                }
+                                if (item.folder.id in expandedFolders) {
+                                    revealFolderId = item.folder.id
+                                    revealTick++
                                 }
                             },
                             onOpenMenu = { offset -> menuOffset = offset; folderMenuFor = item.folder.id },
@@ -1793,6 +1854,16 @@ private val CORNER_BUTTON_PADDING = 8.dp
  */
 internal fun cornerButtonReachDp(iconSizeDp: Int): Dp =
     iconSizeDp.dp + CORNER_BUTTON_PADDING * 2 + CORNER_BUTTON_MARGIN * 2
+
+/**
+ * Frames an opened folder's foot has to stay put before it counts as open. More than the one or
+ * two its expansion can take to get going, so a folder still at its closed height is not taken
+ * for one that has finished.
+ */
+private const val REVEAL_STEADY_FRAMES = 4
+
+/** Longest a folder is given to finish opening before it is shown as far as it has got. */
+private const val REVEAL_TIMEOUT_NANOS = 1_500_000_000L
 
 /** Which side a capped stack sits against, so it stays where the rows are aligned. */
 private fun HomeAlignment.wideScreenAlignment(): Alignment = when (this) {

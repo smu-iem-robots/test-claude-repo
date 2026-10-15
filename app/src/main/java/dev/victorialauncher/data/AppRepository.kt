@@ -582,6 +582,12 @@ class AppRepository(
     // label a second time through an English configuration, which is a whole resource table
     // per app — so it is only ever asked for a name that has no A-Z letter of its own, and the
     // answer is kept.
+    //
+    // Guarded by itself: the list's model and the one a search for hidden apps runs against are
+    // built at the same moment, each on a thread of its own, and both ask. A plain map written
+    // from two threads at once can lose entries or corrupt itself. Held through the load rather
+    // than only around the map, so the second to ask for a name finds the first one's answer
+    // instead of loading it again.
     private val englishLabels = mutableMapOf<String, String?>()
 
     /**
@@ -592,19 +598,21 @@ class AppRepository(
      */
     fun englishLabel(app: AppInfo): String? {
         if (app.kind != EntryKind.APP) return null
-        return englishLabels.getOrPut(app.key) {
-            runCatching {
-                val info = pm.getActivityInfo(app.componentName, 0)
-                val labelRes = if (info.labelRes != 0) info.labelRes else info.applicationInfo.labelRes
-                if (labelRes == 0) return@runCatching null
-                val res = pm.getResourcesForApplication(info.applicationInfo)
-                val config = Configuration(res.configuration).apply { setLocale(Locale.ENGLISH) }
-                res.getString(labelRes).takeIf { it.isNotBlank() }?.let { english ->
-                    // The context-adjusted resources fall back to the default language when an app
-                    // ships no English, which just hands the same name back.
-                    Resources(res.assets, res.displayMetrics, config).getString(labelRes)
-                }
-            }.getOrNull()
+        return synchronized(englishLabels) {
+            englishLabels.getOrPut(app.key) {
+                runCatching {
+                    val info = pm.getActivityInfo(app.componentName, 0)
+                    val labelRes = if (info.labelRes != 0) info.labelRes else info.applicationInfo.labelRes
+                    if (labelRes == 0) return@runCatching null
+                    val res = pm.getResourcesForApplication(info.applicationInfo)
+                    val config = Configuration(res.configuration).apply { setLocale(Locale.ENGLISH) }
+                    res.getString(labelRes).takeIf { it.isNotBlank() }?.let { english ->
+                        // The context-adjusted resources fall back to the default language when an app
+                        // ships no English, which just hands the same name back.
+                        Resources(res.assets, res.displayMetrics, config).getString(labelRes)
+                    }
+                }.getOrNull()
+            }
         }
     }
 

@@ -1012,6 +1012,16 @@ fun AppListScreen(
             y < last.offset + last.size - info.viewportStartOffset
     }
 
+    // Go launches the best match for what was typed. With nothing typed there is no match,
+    // only the list, and Go launched whatever happened to sort first in it.
+    fun launchTopResult() {
+        if (!searching) return
+        displayModel.rows
+            .filterIsInstance<AppListRow.Entry>()
+            .firstOrNull()
+            ?.let { onLaunch(it.app) }
+    }
+
     // Same reason as the home screen: the rows inherit the ambient style, so one provider
     // puts the shadow behind every name rather than each call naming it.
     CompositionLocalProvider(
@@ -1101,12 +1111,7 @@ fun AppListScreen(
                 edgeSide = edgeSide,
                 showAlphabet = showAlphabet,
                 stripInset = stripInset,
-                onGo = {
-                    displayModel.rows
-                        .filterIsInstance<AppListRow.Entry>()
-                        .firstOrNull()
-                        ?.let { onLaunch(it.app) }
-                },
+                onGo = { launchTopResult() },
                 modifier = Modifier
                     .onSizeChanged { searchHeightPx = it.height }
                     .focusRequester(searchFocus),
@@ -1316,12 +1321,7 @@ fun AppListScreen(
                 edgeSide = edgeSide,
                 showAlphabet = showAlphabet,
                 stripInset = stripInset,
-                onGo = {
-                    displayModel.rows
-                        .filterIsInstance<AppListRow.Entry>()
-                        .firstOrNull()
-                        ?.let { onLaunch(it.app) }
-                },
+                onGo = { launchTopResult() },
                 atBottom = true,
                 modifier = Modifier.focusRequester(searchFocus),
             )

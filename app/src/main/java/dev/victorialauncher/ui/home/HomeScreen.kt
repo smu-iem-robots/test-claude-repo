@@ -485,9 +485,15 @@ fun HomeScreen(
     // that clear would cost every default setup — swipe on the right, favorites on the left —
     // shorter names and moved handles for a problem it does not have. Centered favorites are
     // held clear on both sides, or clearing one would pull them off center.
-    val stripInset = remember(stripInsetSide, edgeZoneSide, edgeZoneExtentDp, alignment) {
+    val stripInset = remember(stripInsetSide, edgeZoneSide, edgeZoneExtentDp, alignment, sidePaddingDp) {
         fun covers(side: EdgeSide?, which: EdgeSide) = side == which || side == EdgeSide.BOTH
-        val zone = edgeZoneExtentDp.dp
+        // A row already holds the part that answers a tap this far in from its own sides, so
+        // only the rest of the zone is left to clear. Clearing all of it on top of that counted
+        // the row's padding twice, and set the favorites further in than the zone reaches
+        // (#106). The visible strip below is a different matter: that is about letters drawn
+        // over icons, not about taps, and keeps its full width.
+        val rowInset = (sidePaddingDp - 8).coerceAtLeast(0).dp
+        val zone = (edgeZoneExtentDp.dp - rowInset).coerceAtLeast(0.dp)
         val leansLeft = alignment != HomeAlignment.RIGHT
         val leansRight = alignment != HomeAlignment.LEFT
         val zoneLeft = if (covers(edgeZoneSide, EdgeSide.LEFT)) zone else 0.dp

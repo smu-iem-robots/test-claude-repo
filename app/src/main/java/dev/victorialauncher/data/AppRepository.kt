@@ -99,14 +99,15 @@ class AppRepository(
     fun queryAllApps(privateSpace: PrivateSpace = privateSpace()): List<AppInfo> {
         val profiles = runCatching { userManager.userProfiles }.getOrNull().orEmpty()
         val mainUser = Process.myUserHandle()
+        // One call for the lot: asking per package turns a list build into hundreds of round
+        // trips to the package manager. And one for every profile, not one each: it answers
+        // for the profile we run in whichever profile is being listed.
+        val installTimes = installTimes()
         return profiles
             .flatMap { user ->
                 val serial = listableSerial(user, mainUser) ?: return@flatMap emptyList()
                 val work = isWorkProfile(user, mainUser)
                 val privateProfile = userType(user) == USER_TYPE_PROFILE_PRIVATE
-                // One call for the lot: asking per package turns a list build into
-                // hundreds of round trips to the package manager.
-                val installTimes = installTimes()
                 // Asking about a profile we are not the launcher for throws rather than
                 // returning nothing, and one inaccessible profile must not lose the rest.
                 runCatching { launcherApps.getActivityList(null, user) }

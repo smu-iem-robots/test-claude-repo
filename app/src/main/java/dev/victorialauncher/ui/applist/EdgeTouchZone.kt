@@ -19,8 +19,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import dev.victorialauncher.data.EdgeSide
 import dev.victorialauncher.service.HapticUtil
 import kotlinx.coroutines.Job
@@ -72,7 +74,7 @@ fun EdgeTouchZone(
     bandOnly: Boolean,
     /** Whether resting on a letter walks the list on through it. */
     holdScroll: Boolean,
-    /** How much of the very edge is left to the system's own gestures. */
+    /** How much of the very edge is shared with the system's own gestures. */
     insetDp: Dp,
     hapticsEnabled: Boolean,
     state: ScrubState,
@@ -96,18 +98,25 @@ fun EdgeTouchZone(
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
     val fromLeft = side == EdgeSide.LEFT
+    // Which end of the zone is the screen's edge, in the zone's own coordinates. Those always
+    // run left to right, while the zone itself is placed by start and end.
+    val edgeAtLocalLeft = fromLeft == (LocalLayoutDirection.current == LayoutDirection.Ltr)
     // The gesture handler outlives the composition that built it, so it must not close over
     // this frame's callbacks.
     val currentDoubleTap by rememberUpdatedState(onDoubleTap)
     val currentDismiss by rememberUpdatedState(onDismiss)
     val currentListOpen by rememberUpdatedState(listOpen)
+    val currentInset by rememberUpdatedState(insetDp)
+    val currentEdgeAtLocalLeft by rememberUpdatedState(edgeAtLocalLeft)
 
     Box(
         modifier = modifier
-            // Held off the edge rather than made narrower: the point is to leave the outermost
-            // pixels to the system, so the strip has to start inside them.
-            .padding(start = if (fromLeft) insetDp else 0.dp, end = if (fromLeft) 0.dp else insetDp)
-            .width(widthDp)
+            // Out to the very edge, the part shared with the system's back swipe included. That
+            // part used to be padding, which handed every touch landing there to whatever lay
+            // underneath, most often a favorite running the width of the screen: a scroll
+            // started at the edge picked the row instead of opening the list (#119). It belongs
+            // to the zone again, but waits to see which gesture it has been given; see below.
+            .width(insetDp + widthDp)
             // The whole side, or only as much of it as the letters occupy. Full height is the
             // old behaviour and still the default; confined, the edge stops taking touches
             // meant for whatever shares that side of the screen.
@@ -137,6 +146,44 @@ fun EdgeTouchZone(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
+
+                    // The outermost part of the edge is the system's back swipe as much as it
+                    // is ours. The system takes a sideways move there for itself and cancels
+                    // the touch out from under us, and a cancel arrives here as a lift that is
+                    // already consumed. So nothing opens from there until the touch has shown
+                    // it is something else: a move up or down the edge, or a lift where it
+                    // landed. Sideways is left alone, which keeps the room #111 asked for; the
+                    // rest of the zone opens on the down, as it always has.
+                    var startAt = down.position
+                    var startedMoving = false
+                    var liftedEarly = false
+                    val sharedPx = currentInset.toPx()
+                    val fromEdgePx =
+                        if (currentEdgeAtLocalLeft) down.position.x else size.width - down.position.x
+                    if (sharedPx > 0f && fromEdgePx < sharedPx) {
+                        val slop = viewConfiguration.touchSlop
+                        while (true) {
+                            val change = awaitPointerEvent().changes
+                                .firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                            if (!change.pressed) {
+                                if (change.isConsumed) return@awaitEachGesture
+                                liftedEarly = true
+                                break
+                            }
+                            val travel = change.position - down.position
+                            when (EdgeZoneGeometry.sharedMove(travel.x, travel.y, slop)) {
+                                EdgeZoneGeometry.SharedMove.SIDEWAYS -> return@awaitEachGesture
+                                EdgeZoneGeometry.SharedMove.UNDECIDED -> change.consume()
+                                EdgeZoneGeometry.SharedMove.ALONG -> {
+                                    change.consume()
+                                    startAt = change.position
+                                    startedMoving = true
+                                    break
+                                }
+                            }
+                        }
+                    }
+
                     // Read before onOpen changes it: a tap that opened the list must not
                     // also be read as a tap on an open one.
                     val openAtDown = currentListOpen
@@ -200,16 +247,19 @@ fun EdgeTouchZone(
                         )
                     }
 
-                    report(down.position.x, down.position.y)
+                    // Where the finger is now, which is where it landed unless the shared edge
+                    // made it prove itself first.
+                    report(startAt.x, startAt.y)
 
                     // Two things start the same way, told apart by whether the finger moves:
                     // travelling is a scrub, letting go without it is a tap that a second tap
                     // turns into a lock. Opening the list on the down is untouched by either.
-                    var moved = false
+                    var moved = startedMoving
+                    if (moved) state.markScrubbing()
                     // Where the finger last actually went somewhere, and when. Resting on a
                     // letter still delivers events — a fingertip is never quite still — so the
                     // hold is judged by distance travelled rather than by events arriving.
-                    var restAt = down.position
+                    var restAt = startAt
                     // The dwell is timed beside the gesture rather than inside it. Waiting for
                     // the wait with a timeout around awaitPointerEvent meant abandoning and
                     // restarting the await every few frames, and an event arriving in one of
@@ -231,8 +281,11 @@ fun EdgeTouchZone(
                         holdJob = null
                         state.holdScroll(false)
                     }
-                    armHold()
-                    while (true) {
+                    // A finger already lifted on the shared edge has nothing left to follow.
+                    // Waiting for it here would wait on the next touch instead, and this gesture
+                    // would end only once that one lifted, swallowing it whole.
+                    if (!liftedEarly) armHold()
+                    while (!liftedEarly) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (!change.pressed) break

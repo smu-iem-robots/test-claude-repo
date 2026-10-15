@@ -6,6 +6,35 @@ import org.junit.Test
 
 class EdgeZoneGeometryTest {
 
+    private val slop = 8f
+
+    @Test
+    fun `a touch that has barely moved is not decided yet`() {
+        assertEquals(EdgeZoneGeometry.SharedMove.UNDECIDED, EdgeZoneGeometry.sharedMove(0f, 0f, slop))
+        assertEquals(EdgeZoneGeometry.SharedMove.UNDECIDED, EdgeZoneGeometry.sharedMove(5f, -7f, slop))
+        // Exactly at slop is still inside it.
+        assertEquals(EdgeZoneGeometry.SharedMove.UNDECIDED, EdgeZoneGeometry.sharedMove(8f, 8f, slop))
+    }
+
+    @Test
+    fun `sideways either way is left to the system`() {
+        assertEquals(EdgeZoneGeometry.SharedMove.SIDEWAYS, EdgeZoneGeometry.sharedMove(9f, 3f, slop))
+        assertEquals(EdgeZoneGeometry.SharedMove.SIDEWAYS, EdgeZoneGeometry.sharedMove(-9f, 3f, slop))
+    }
+
+    @Test
+    fun `up or down the edge is a scrub`() {
+        assertEquals(EdgeZoneGeometry.SharedMove.ALONG, EdgeZoneGeometry.sharedMove(3f, 9f, slop))
+        assertEquals(EdgeZoneGeometry.SharedMove.ALONG, EdgeZoneGeometry.sharedMove(-3f, -9f, slop))
+        // Past slop sideways too, but further along the edge than across it.
+        assertEquals(EdgeZoneGeometry.SharedMove.ALONG, EdgeZoneGeometry.sharedMove(10f, 11f, slop))
+    }
+
+    @Test
+    fun `a diagonal tie goes to the system`() {
+        assertEquals(EdgeZoneGeometry.SharedMove.SIDEWAYS, EdgeZoneGeometry.sharedMove(10f, -10f, slop))
+    }
+
     @Test
     fun `nothing kept clear leaves the band as it is`() {
         val bottom = EdgeZoneGeometry.confinedBottomPx(

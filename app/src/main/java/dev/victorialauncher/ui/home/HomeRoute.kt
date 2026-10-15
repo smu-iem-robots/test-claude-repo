@@ -513,7 +513,9 @@ fun HomeRoute(
                 // Starting where the strip now starts. Excluding from the very edge while the
                 // strip itself has been held inward is what made the setting do nothing: the
                 // touch area moved, and the system was still being told to keep its back
-                // gesture out of the pixels the setting had just handed back to it.
+                // gesture out of the pixels the setting had just handed back to it. The strip
+                // reaches into that gap again, but only to wait for the system to pass on a
+                // touch, so the gap stays the system's here.
                 val rects = buildList {
                     if (settings.edgeSide != EdgeSide.RIGHT) {
                         add(Rect(insetLeftPx, exTop, insetLeftPx + widthPx, exBottom))

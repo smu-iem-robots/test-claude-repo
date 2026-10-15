@@ -279,6 +279,9 @@ fun VictoriaNavHost(
     val hiddenApps by app.prefs.hiddenApps.collectAsState(initial = emptySet())
     val favoriteKeys by app.prefs.favorites.collectAsState(initial = emptyList())
     val frequentExcluded by app.prefs.frequentExcluded.collectAsState(initial = emptySet())
+    // Collected up here with the others rather than inside its own screen, where the first
+    // frame would list every app as not pausing and then move the chosen ones up a frame later.
+    val mindfulApps by app.prefs.mindfulApps.collectAsState(initial = emptySet())
     val favoritesEverSet by app.prefs.favoritesEverSet.collectAsState(initial = true)
     val edgeZoneBandOnly by app.prefs.edgeZoneBandOnly.collectAsState(initial = false)
     val holdScroll by app.prefs.holdScroll.collectAsState(initial = false)
@@ -1051,9 +1054,6 @@ fun VictoriaNavHost(
         }
 
         composable("settings/mindful") {
-            // Collected here rather than with the rest above: nothing but this screen and the
-            // home destination, which reads it for itself, has any use for it.
-            val mindfulApps by app.prefs.mindfulApps.collectAsState(initial = emptySet())
             HiddenAppsScreen(
                 // What a press opens, which is all a pause can stand in front of. The private
                 // space row locks and unlocks instead.

@@ -285,9 +285,10 @@ fun HomeScreen(
     onSetMindful: (AppInfo, Boolean) -> Unit = { _, _ -> },
     /**
      * What a double tap on bare wallpaper does, or null for nothing. Null rather than a callback
-     * that does nothing, because a detector told to watch for a second tap holds on to every
-     * first one until the double-tap window closes, and takes a long press begun inside it as
-     * that second tap rather than as the long press that opens the wallpaper's menu.
+     * that does nothing: a detector told to watch for a second tap treats every tap as the start
+     * of one and waits out the double-tap window before it lets go, and a press that lands in
+     * that window is read as the second tap rather than as a gesture of its own. That is a cost
+     * nobody who has left the setting off should pay.
      */
     onDoubleTapWallpaper: (() -> Unit)? = null,
 ) {    // Appended at the point of showing rather than stored in the label, so a rename still

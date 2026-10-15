@@ -1002,6 +1002,17 @@ fun AppListScreen(
     var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var editDialogFor by remember { mutableStateOf<AppInfo?>(null) }
     val touchPosition = remember { mutableStateOf(Offset.Zero) }
+    // Whether the app whose menu was opened last can be uninstalled. Asked once here, as that
+    // menu opens, rather than by every row: a question per row would launch work for each one
+    // the list scrolls into view. Left standing when the menu closes, so the item does not
+    // drop out of a menu still fading away, and answered no again for the next app until asked.
+    var menuApp by remember { mutableStateOf<AppInfo?>(null) }
+    val menuAppUninstallable by produceState(initialValue = false, menuApp) {
+        // Cleared first, so the last app's answer never stands in for this one's while it is asked.
+        value = false
+        val target = menuApp ?: return@produceState
+        value = withContext(Dispatchers.Default) { canUninstall(target) }
+    }
 
     // The vertical span the rows actually occupy. A tap inside it belongs to the list even
     // when it misses a label — a section header, the gap under the last app of a letter —
@@ -1253,12 +1264,16 @@ fun AppListScreen(
                         menuOffset = menuOffset,
                         touchPosition = touchPosition,
                         onLaunch = { onLaunch(row.app) },
-                        onLongPress = { offset -> menuOffset = offset; menuForKey = row.app.key },
+                        onLongPress = { offset ->
+                            menuOffset = offset
+                            menuApp = row.app
+                            menuForKey = row.app.key
+                        },
                         onDismissMenu = { menuForKey = null },
                         onSetFavorite = { onSetFavorite(row.app, it) },
                         onEdit = { editDialogFor = row.app },
                         onAppInfo = { onAppInfo(row.app) },
-                        canUninstall = { canUninstall(row.app) },
+                        uninstallable = menuAppUninstallable && menuApp?.key == row.app.key,
                         onUninstall = { onUninstall(row.app) },
                         onUnpin = { onUnpinShortcut(row.app) },
                         onHide = { onHideApp(row.app, row.app.key !in hiddenApps) },
@@ -1436,7 +1451,8 @@ private fun AppRow(
     onSetFavorite: (Boolean) -> Unit,
     onEdit: () -> Unit,
     onAppInfo: () -> Unit,
-    canUninstall: () -> Boolean,
+    /** Asked by the list for the app whose menu is open; see AppListScreen. */
+    uninstallable: Boolean,
     onUninstall: () -> Unit,
     onUnpin: () -> Unit,
     onHide: () -> Unit,
@@ -1452,11 +1468,6 @@ private fun AppRow(
     val pressed by interaction.collectIsPressedAsState()
     val density = LocalDensity.current
     var shortcutMenu by remember { mutableStateOf(false) }
-    // Asked as the menu opens rather than as the row is drawn. Kept once known instead of
-    // reset on close, so the item does not drop out of a menu that is still fading away.
-    val uninstallable by produceState(initialValue = false, menuExpanded, app) {
-        if (menuExpanded) value = withContext(Dispatchers.Default) { canUninstall() }
-    }
 
     Box {
         Row(

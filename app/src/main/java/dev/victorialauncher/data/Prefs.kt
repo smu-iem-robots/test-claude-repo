@@ -865,6 +865,9 @@ class Prefs(private val context: Context) {
             val hidden = pref[Keys.HIDDEN_APPS] ?: emptySet()
             if (componentKey in hidden) pref[Keys.HIDDEN_APPS] = hidden - componentKey
 
+            val excluded = pref[Keys.FREQUENT_EXCLUDED] ?: emptySet()
+            if (componentKey in excluded) pref[Keys.FREQUENT_EXCLUDED] = excluded - componentKey
+
             val counts = jsonToMap(pref[Keys.LAUNCH_COUNTS])
             if (componentKey in counts) pref[Keys.LAUNCH_COUNTS] = mapToJson(counts - componentKey)
 

@@ -37,7 +37,8 @@ class PrefsForgetTest {
     @After
     fun tearDown() = runBlocking {
         // forgetEntry wipes everything this test could have left behind under each key,
-        // including the quick-launch slots, so it doubles as the cleanup.
+        // including the quick-launch slots and the most-used exclusions, so it doubles as the
+        // cleanup.
         prefs.forgetEntry(keyA)
         prefs.forgetEntry(keyB)
         prefs.forgetEntry(keyOther)
@@ -75,6 +76,17 @@ class PrefsForgetTest {
 
         assertNull("a swipe must not still point at a row that is gone for good", prefs.quickLaunchLeft.first())
         assertNull(prefs.quickLaunchRight.first())
+    }
+
+    @Test
+    fun forgettingAnEntryTakesItOffTheMostUsedExclusions() = runBlocking {
+        prefs.setFrequentExcluded(keyB, true)
+        prefs.setFrequentExcluded(keyOther, true)
+
+        prefs.forgetEntry(keyB)
+
+        assertFalse("a row gone for good must not stay excluded", keyB in prefs.frequentExcluded.first())
+        assertTrue("an unrelated exclusion must survive", keyOther in prefs.frequentExcluded.first())
     }
 
     @Test

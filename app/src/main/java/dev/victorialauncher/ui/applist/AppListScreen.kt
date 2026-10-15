@@ -225,8 +225,13 @@ fun AppListScreen(
     edgeSide: EdgeSide,
     /** Hoisted so a swipe that overshoots the opening animation can keep scrolling it. */
     listState: LazyListState,
-    /** How far the list still has to travel to be fully open; 0 once it has arrived. */
-    enterPullPx: Float,
+    /**
+     * How far the list still has to travel to be fully open; 0 once it has arrived. A function
+     * read only while drawing, like the scrub's position: as a value it was read from the
+     * opening animation in the caller's composition, and recomposed the home screen and this
+     * whole list on every frame of every open (#119).
+     */
+    enterPullPx: () -> Float,
     /** Whether the status bar is set to stay hidden here, so its gap is not reserved. */
     statusBarHidden: Boolean,
     /** The model a query runs against, which may carry hidden apps the list itself omits. */
@@ -409,9 +414,10 @@ fun AppListScreen(
     // Entering and collapsing are the same transform in opposite directions, so the distance
     // left to travel on the way in is fed through the very same path.
     val collapseProvider: () -> Float = {
+        val entering = enterPullPx()
         when {
             collapsing -> collapseAnim.value
-            enterPullPx > 0f -> enterPullPx
+            entering > 0f -> entering
             else -> overPull
         }
     }

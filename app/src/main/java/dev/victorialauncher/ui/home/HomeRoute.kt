@@ -895,7 +895,8 @@ fun HomeRoute(
                 listState = appListState,
                 // Distance still to travel, which is exactly what the collapse transform
                 // takes: the list arrives scaled down and faded, and grows into place.
-                enterPullPx = openDistancePx - openAnim.value,
+                // Handed over unread, so only the list's draw follows the animation.
+                enterPullPx = { openDistancePx - openAnim.value },
                 query = appListQuery,
                 onQueryChange = { appListQuery = it },
                 alignment = settings.appListAlignment,

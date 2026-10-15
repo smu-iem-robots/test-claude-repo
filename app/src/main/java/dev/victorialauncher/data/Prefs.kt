@@ -187,6 +187,10 @@ class Prefs(private val context: Context) {
         val HOLD_SCROLL = booleanPreferencesKey("hold_scroll")
         val WEB_SEARCH_FALLBACK = booleanPreferencesKey("web_search_fallback")
         val SWIPE_UP_OPENS_SEARCH = booleanPreferencesKey("swipe_up_opens_search")
+        val SEARCH_ANSWERS = booleanPreferencesKey("search_answers")
+        val SEARCH_ACTIONS = booleanPreferencesKey("search_actions")
+        val SEARCH_FORGIVE_TYPOS = booleanPreferencesKey("search_forgive_typos")
+        val SEARCH_OPEN_ONLY_MATCH = booleanPreferencesKey("search_open_only_match")
         val HOLD_SCROLL_SPEED = intPreferencesKey("hold_scroll_speed")
         val ALIGNMENT = stringPreferencesKey("alignment")
         val APPLIST_ALIGNMENT = stringPreferencesKey("applist_alignment")
@@ -664,6 +668,37 @@ class Prefs(private val context: Context) {
     /** Whether swiping up puts the cursor in the search box rather than only opening the list. */
     val swipeUpOpensSearch: Flow<Boolean> =
         data.map { it[Keys.SWIPE_UP_OPENS_SEARCH] ?: false }.distinctUntilChanged()
+
+    /**
+     * Whether the search box works out sums, conversions, steel weights and the odd coin flip
+     * from what is typed.
+     *
+     * On by default, because it is only ever seen by someone who has turned the search bar on,
+     * and it adds to the results without changing which apps they hold or in what order.
+     */
+    val searchAnswers: Flow<Boolean> =
+        data.map { it[Keys.SEARCH_ANSWERS] ?: true }.distinctUntilChanged()
+
+    /**
+     * Whether a phone number, link, address, timer or alarm typed into the search offers to be
+     * handed to the app for it. On by default for the same reason as [searchAnswers]: nothing
+     * starts until it is tapped or Go is pressed with no app to open.
+     */
+    val searchActions: Flow<Boolean> =
+        data.map { it[Keys.SEARCH_ACTIONS] ?: true }.distinctUntilChanged()
+
+    /** Whether a query that matches nothing shows the apps a slip or two away from it. */
+    val searchForgiveTypos: Flow<Boolean> =
+        data.map { it[Keys.SEARCH_FORGIVE_TYPOS] ?: true }.distinctUntilChanged()
+
+    /**
+     * Whether an app opens by itself once a query matches it and nothing else.
+     *
+     * Off by default. It is quick once it is expected and a surprise until then, and an app
+     * opening while you are still typing is not something to find out about by accident.
+     */
+    val searchOpenOnlyMatch: Flow<Boolean> =
+        data.map { it[Keys.SEARCH_OPEN_ONLY_MATCH] ?: false }.distinctUntilChanged()
 
     /**
      * Whether the private space's apps get a section of their own below the alphabet.
@@ -1218,6 +1253,22 @@ class Prefs(private val context: Context) {
 
     suspend fun setSwipeUpOpensSearch(v: Boolean) {
         context.dataStore.edit { it[Keys.SWIPE_UP_OPENS_SEARCH] = v }
+    }
+
+    suspend fun setSearchAnswers(v: Boolean) {
+        context.dataStore.edit { it[Keys.SEARCH_ANSWERS] = v }
+    }
+
+    suspend fun setSearchActions(v: Boolean) {
+        context.dataStore.edit { it[Keys.SEARCH_ACTIONS] = v }
+    }
+
+    suspend fun setSearchForgiveTypos(v: Boolean) {
+        context.dataStore.edit { it[Keys.SEARCH_FORGIVE_TYPOS] = v }
+    }
+
+    suspend fun setSearchOpenOnlyMatch(v: Boolean) {
+        context.dataStore.edit { it[Keys.SEARCH_OPEN_ONLY_MATCH] = v }
     }
 
     /**

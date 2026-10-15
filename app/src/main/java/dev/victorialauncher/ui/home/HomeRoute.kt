@@ -901,6 +901,9 @@ fun HomeRoute(
                 onQueryChange = { appListQuery = it },
                 alignment = settings.appListAlignment,
                 iconSide = settings.iconSide,
+                // Left to go once the app it went to is in front, as after a launch, so the home
+                // screen does not flash up in between.
+                onActionStarted = { closeAfterLaunch() },
             )
         }
 

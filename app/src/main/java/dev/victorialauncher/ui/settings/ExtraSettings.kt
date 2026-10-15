@@ -18,4 +18,5 @@ import androidx.compose.runtime.Composable
  * opens a screen of its own.
  */
 @Composable
-internal fun extraSettingsEntries(onOpenRoute: (String) -> Unit): List<SettingsEntry> = emptyList()
+internal fun extraSettingsEntries(onOpenRoute: (String) -> Unit): List<SettingsEntry> =
+    emptyList<SettingsEntry>() + searchSettingsEntries(onOpenRoute)

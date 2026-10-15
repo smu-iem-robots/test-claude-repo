@@ -306,16 +306,14 @@ fun AppListModel.filtered(match: (AppListRow.Entry) -> Boolean): AppListModel {
  * matched every app with a c anywhere in it and Chess sat below Facebook and Microsoft Word.
  * The letters you have typed are almost always the start of the name you mean, then the start
  * of a word inside it, and only failing both is a match in the middle worth anything.
+ *
+ * The package name comes after the name's own bands, deliberately: it is not what anyone typed,
+ * only where the English word survives on a phone that renamed everything. Accents and case are
+ * folded out of both sides first, so "cafe" ranks Café exactly as it ranks Cafe. The bands, and
+ * the initials that follow them, are in SearchMatch.kt.
  */
-fun searchRank(name: String, packageName: String, term: String): Int = when {
-    name.startsWith(term, ignoreCase = true) -> 0
-    name.split(' ', '-', '_', '.').any { it.startsWith(term, ignoreCase = true) } -> 1
-    name.contains(term, ignoreCase = true) -> 2
-    // Last, and deliberately so: a package name is not what anyone typed, it is only where
-    // the English word survives on a phone that renamed everything.
-    packageName.contains(term, ignoreCase = true) -> 3
-    else -> 4
-}
+fun searchRank(name: String, packageName: String, term: String): Int =
+    SearchName(name, packageName).rank(foldForSearch(term))
 
 /**
  * The same list reordered by [rank], keeping the order it already had within each band and

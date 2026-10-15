@@ -75,6 +75,7 @@ import androidx.compose.material3.LocalTextStyle
 import dev.victorialauncher.ui.theme.launcherTextShadow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.MutableState
@@ -104,6 +105,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -133,7 +135,9 @@ import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import dev.victorialauncher.R
+import dev.victorialauncher.VictoriaApp
 import androidx.compose.ui.res.stringResource
+import kotlin.random.Random
 
 /**
  * Breathing room above A and below the settings row when no scrub has placed the list.
@@ -270,6 +274,11 @@ fun AppListScreen(
     onQueryChange: (String) -> Unit,
     alignment: HomeAlignment,
     iconSide: IconSide,
+    /**
+     * Called once something typed has been handed to another app — a number to the dialler, a
+     * link to the browser — so the list can go the way it goes when an app is launched.
+     */
+    onActionStarted: () -> Unit = onDismiss,
 ) {
     // Appended at the point of showing rather than stored in the label, so a rename still
     // wins and turning this off needs no re-reading of every app.
@@ -300,29 +309,113 @@ fun AppListScreen(
     // The touch zone is there with the letters hidden, so what has to be cleared is its
     // width, never mind whether anything is drawn in it.
     val stripInset = maxOf(STRIP_INSET, edgeZoneWidthDp.dp)
+    // The search's own settings, read here rather than threaded down from the navigation host,
+    // the way an icon reaches the icon pack: nothing else on the screen has any use for them.
+    val context = LocalContext.current
+    val prefs = (context.applicationContext as VictoriaApp).prefs
+    val answersOn by prefs.searchAnswers.collectAsState(initial = true)
+    val actionsOn by prefs.searchActions.collectAsState(initial = true)
+    val forgiveTypos by prefs.searchForgiveTypos.collectAsState(initial = true)
+    val openOnlyMatch by prefs.searchOpenOnlyMatch.collectAsState(initial = false)
+
+    // Each name folded and split once for as long as the list and its names stay the same,
+    // rather than again for every app on every keystroke. Filled as a search first asks for
+    // each name, so a list nobody searches never pays for it.
+    val searchNames = remember(searchModel, nameOverrides, markWorkApps, workSuffix) {
+        HashMap<String, SearchName>()
+    }
     // Keyed on everything displayName reads as well, since the match is made against it: left
     // out, a rename made while a query was up went on matching by the old name.
-    val displayModel = remember(model, searchModel, query, searchEnabled, nameOverrides, markWorkApps, workSuffix) {
+    val searchResult = remember(
+        model, searchModel, query, searchEnabled, nameOverrides, markWorkApps, workSuffix,
+        forgiveTypos, searchNames,
+    ) {
         if (!searching) {
-            model
+            SearchResult(model, soleMatch = null)
         } else {
-            val term = query.trim()
-            searchModel
-                .filtered { row ->
-                    val app = row.app
-                    // Each app once. One under "Recently installed" is under its own letter as
-                    // well, and was found twice, once for each place the list happens to show it.
-                    row.section != RECENT_SECTION && (
-                        displayName(app).contains(term, ignoreCase = true) ||
-                            // An app names itself in the language of the device, so on a Japanese
-                            // phone Settings calls itself 設定 and no amount of typing "settings"
-                            // reaches it. Package names are ASCII almost without exception, so the
-                            // English word is usually sitting right there in com.android.settings.
-                            app.componentName.packageName.contains(term, ignoreCase = true)
-                        )
+            val typed = query.trim()
+            val term = foldForSearch(typed)
+            fun nameOf(app: AppInfo): SearchName = searchNames.getOrPut(app.key) {
+                // An app names itself in the language of the device, so on a Japanese phone
+                // Settings calls itself 設定 and no amount of typing "settings" reaches it.
+                // Package names are ASCII almost without exception, so the English word is
+                // usually sitting right there in com.android.settings.
+                SearchName(displayName(app), app.componentName.packageName)
+            }
+            val ranks = HashMap<String, Int>()
+            fun rankOf(app: AppInfo): Int = ranks.getOrPut(app.key) { nameOf(app).rank(term) }
+            // Each app once. One under "Recently installed" is under its own letter as well,
+            // and was found twice, once for each place the list happens to show it.
+            val found = searchModel.filtered { row ->
+                row.section != RECENT_SECTION && rankOf(row.app) < RANK_NONE
+            }
+            val entries = found.rows.filterIsInstance<AppListRow.Entry>()
+            if (entries.isEmpty() && forgiveTypos) {
+                // Only when nothing matched outright. Slips forgiven beside real matches pad the
+                // results with apps nobody asked for, when the one meant is already among them.
+                val distances = HashMap<String, Int>()
+                fun distanceOf(app: AppInfo): Int =
+                    distances.getOrPut(app.key) { nameOf(app).typoDistance(term) }
+                val near = searchModel
+                    .filtered { row -> row.section != RECENT_SECTION && distanceOf(row.app) != NO_TYPO_MATCH }
+                    .rankedBy { distanceOf(it) }
+                SearchResult(near, soleMatch = null)
+            } else {
+                // Never on the package name alone, which is a guess at an app rather than its
+                // name, and opening it unasked would be acting on the guess. Nor the private
+                // space's padlock, which locks or unlocks rather than opens anything.
+                val sole = entries.singleOrNull()?.app?.takeIf { app ->
+                    typed.length >= 2 && rankOf(app) != RANK_PACKAGE && !app.disabled &&
+                        (app.kind == EntryKind.APP || app.kind == EntryKind.SHORTCUT)
                 }
-                .rankedBy { searchRank(displayName(it), it.componentName.packageName, term) }
+                SearchResult(found.rankedBy { rankOf(it) }, sole)
+            }
         }
+    }
+    val displayModel = searchResult.model
+
+    // Worked out from the query as typed, apart from the list. Answers are rolled afresh for
+    // every new query and again on a tap, so the dice are not the same dice twice.
+    var rollTick by remember { mutableIntStateOf(0) }
+    val typedForExtras = if (searching) query.trim() else ""
+    val answers = remember(typedForExtras, answersOn, rollTick) {
+        if (answersOn && typedForExtras.isNotEmpty()) {
+            searchAnswers(typedForExtras, Random.Default)
+        } else {
+            emptyList<SearchAnswer>()
+        }
+    }
+    val actions = remember(typedForExtras, actionsOn) {
+        if (actionsOn && typedForExtras.isNotEmpty()) searchActions(typedForExtras) else emptyList<SearchAction>()
+    }
+    // The shared empty list when there is nothing to show, rather than a new one from map on
+    // every pass: the Go handler holds this, and a fresh list each time would recompose the
+    // search field on every letter of a scrub, when no query is up and nothing has changed.
+    val shownAnswers = if (answers.isEmpty()) emptyList<ShownAnswer>() else answers.map { it.shown() }
+
+    fun runAction(action: SearchAction) {
+        if (startSearchAction(context, action)) onActionStarted()
+    }
+
+    fun tapAnswer(answer: ShownAnswer) {
+        if (answer.rerolls) rollTick += 1 else copySearchAnswer(context, answer.value)
+    }
+
+    // Opened the moment a query leaves one app and nothing else, and once for that query: typing
+    // on past it while the list waits for the app to come up must not open it a second time.
+    var openedFor by remember { mutableStateOf<String?>(null) }
+    val currentLaunch by rememberUpdatedState(onLaunch)
+    LaunchedEffect(searchResult, openOnlyMatch) {
+        if (!searching) {
+            openedFor = null
+            return@LaunchedEffect
+        }
+        val sole = searchResult.soleMatch ?: return@LaunchedEffect
+        if (!openOnlyMatch) return@LaunchedEffect
+        val typed = query.trim()
+        if (openedFor?.let { typed.startsWith(it) } == true) return@LaunchedEffect
+        openedFor = typed
+        currentLaunch(sole)
     }
     // Animated rather than switched, so an end does not snap from crisp to faded the moment
     // the first pixel scrolls past it.
@@ -337,6 +430,9 @@ fun AppListScreen(
 
     /** Height of the pinned search field, so list-relative offsets can be compared to taps. */
     var searchHeightPx by remember { mutableIntStateOf(0) }
+
+    /** Height of the answers and actions under a field at the top, which push the list down too. */
+    var extrasHeightPx by remember { mutableIntStateOf(0) }
 
     // Each query is a fresh list, so it starts at the top. Without this the offset from
     // whatever was scrolled before carries over, and a query with few matches lands the
@@ -1023,13 +1119,23 @@ fun AppListScreen(
 
     // Go launches the best match for what was typed. With nothing typed there is no match,
     // only the list, and Go launched whatever happened to sort first in it.
+    //
+    // With no app to launch, Go takes the next thing on screen instead, in the order each is
+    // worth a key press: an action, then an answer to copy, then the web search.
     fun launchTopResult() {
         if (!searching) return
-        displayModel.rows
-            .filterIsInstance<AppListRow.Entry>()
-            .firstOrNull()
-            ?.let { onLaunch(it.app) }
+        val top = displayModel.rows.filterIsInstance<AppListRow.Entry>().firstOrNull()
+        when {
+            top != null -> onLaunch(top.app)
+            actions.isNotEmpty() -> runAction(actions.first())
+            shownAnswers.isNotEmpty() -> copySearchAnswer(context, shownAnswers.first().value)
+            webSearchFallback -> onWebSearch(query.trim())
+        }
     }
+
+    // Held clear of the strip exactly as the rows are, so an answer lines up with the apps.
+    val extrasStart = if (edgeSide != EdgeSide.RIGHT) stripInset else 0.dp
+    val extrasEnd = if (edgeSide != EdgeSide.LEFT) stripInset else 0.dp
 
     // Same reason as the home screen: the rows inherit the ambient style, so one provider
     // puts the shadow behind every name rather than each call naming it.
@@ -1062,7 +1168,7 @@ fun AppListScreen(
                     // itself = a tap on the wallpaper.
                     // Taps are in overlay space and the list is in its own; only a field above it
                     // shifts the two apart.
-                    val listOffset = if (searchEnabled && !searchAtBottom) searchHeightPx else 0
+                    val listOffset = if (searchEnabled && !searchAtBottom) searchHeightPx + extrasHeightPx else 0
                     if (claimed || moved || isOnListContent(start.y - listOffset)) return@awaitEachGesture
 
                     currentDismiss()
@@ -1124,6 +1230,20 @@ fun AppListScreen(
                 modifier = Modifier
                     .onSizeChanged { searchHeightPx = it.height }
                     .focusRequester(searchFocus),
+            )
+            // On the list's side of the field, and measured, for the same reason the field is:
+            // a tap is judged against where the rows are, and these move them down.
+            SearchExtras(
+                answers = shownAnswers,
+                actions = actions,
+                contentColor = contentColor,
+                alignment = alignment,
+                labelSizeSp = labelSizeSp,
+                startInset = extrasStart,
+                endInset = extrasEnd,
+                onAnswer = { tapAnswer(it) },
+                onAction = { runAction(it) },
+                modifier = Modifier.onSizeChanged { extrasHeightPx = it.height },
             )
         }
         Box(modifier = Modifier.weight(1f)) {
@@ -1328,6 +1448,17 @@ fun AppListScreen(
 
         }
         if (searchEnabled && searchAtBottom) {
+            SearchExtras(
+                answers = shownAnswers,
+                actions = actions,
+                contentColor = contentColor,
+                alignment = alignment,
+                labelSizeSp = labelSizeSp,
+                startInset = extrasStart,
+                endInset = extrasEnd,
+                onAnswer = { tapAnswer(it) },
+                onAction = { runAction(it) },
+            )
             SearchField(
                 query = query,
                 onQueryChange = onQueryChange,
@@ -1401,6 +1532,9 @@ fun AppListScreen(
     }
     }
 }
+
+/** A query's results, and the one app they come to when they come to exactly one. */
+private class SearchResult(val model: AppListModel, val soleMatch: AppInfo?)
 
 /** The row's key in the list, unique even where one app is listed twice. */
 private fun rowKey(row: AppListRow): String = when (row) {
@@ -1629,7 +1763,8 @@ private fun SearchField(
         onValueChange = onQueryChange,
         singleLine = true,
         // The key is already there and already means this; asking is the long way round to the
-        // one app you have just finished spelling. Nothing happens when nothing matched.
+        // one app you have just finished spelling. What it does when nothing matched is up to
+        // the list, which knows what else is on offer.
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
         keyboardActions = KeyboardActions(onGo = { onGo() }),
         placeholder = { Text(stringResource(R.string.applist_search), color = contentColor.copy(alpha = 0.6f)) },

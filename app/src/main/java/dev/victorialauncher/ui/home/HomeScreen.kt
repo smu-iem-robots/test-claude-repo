@@ -1137,7 +1137,10 @@ fun HomeScreen(
                     )
                     // Now Playing sits between the widget and the favorites, and stays there
                     // while editing whether or not anything is playing — see the other branch.
-                    if (nowPlayingHasContent || (editMode && nowPlayingEnabled)) {
+                    // Only beside a real widget, though. Edit layout puts an empty slot here when
+                    // there is none, and the other branch has already drawn Now Playing at the
+                    // top, where it actually sits; without this it was drawn twice over.
+                    if (hasWidget && (nowPlayingHasContent || (editMode && nowPlayingEnabled))) {
                         NowPlayingBlock(
                             editMode = editMode,
                             showPlaceholder = editMode,

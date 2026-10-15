@@ -358,7 +358,14 @@ fun AppListScreen(
     )
     // Where a scrubbed letter is parked. A setting because how far up the screen you can
     // still reach is a fact about the hand and the phone, not something to pick for anyone.
-    val sectionTopPx = (viewportHeightPx * sectionTopPercent / 100f).roundToInt()
+    //
+    // The same place on screen with a search field pinned above the list as without one. The
+    // field already covers that much of the distance, and the whole of it again below the
+    // field parked every letter a field's height lower, with that much more blank between the
+    // field and the list (#116).
+    val pinnedAbovePx = if (searchEnabled && !searchAtBottom) searchHeightPx else 0
+    val sectionTopPx = ((viewportHeightPx * sectionTopPercent / 100f).roundToInt() - pinnedAbovePx)
+        .coerceAtLeast(0)
 
     // The LazyColumn always holds the full list — while scrubbing it's just hidden and
     // pre-scrolled, with the letter's apps drawn over the top. Filtering the rows themselves

@@ -5,6 +5,32 @@ minimal, list-based Android home screen.
 
 ![Victoria Launcher](docs/banner2.png)
 
+## This fork
+
+Built on upstream 0.84.1 as 0.85.0-fork. Everything new is listed in
+[changelogs/108.txt](fastlane/metadata/android/en-US/changelogs/108.txt); the short version:
+
+- **A search that answers.** Sums, unit conversions (including knots and
+  Beaufort, bar, N/mm², kN and Nm), and steel weights: `plate 2000x1000x20`,
+  `pipe 508x20x6000`, `round 50`. It offers to call, text, open a link, start a
+  timer (`timer 10m`) or set an alarm (`alarm 7:30`), finds apps by initials,
+  forgives typos, and flips a coin or rolls `2d6` when asked. Switch on
+  **Settings → App list → Search bar in the app list** to use any of it.
+- **Pause before opening.** Mark an app from its long-press menu, and it opens
+  only after a short countdown that shows how often you opened it or let it go
+  today.
+- **A notification line under favorites**, off by default: who it is from, or
+  who and what it says (#121).
+- **Uninstall** in the long-press menu, **double-tap the wallpaper to lock**,
+  and **wind on the clock widget** (Beaufort and direction, or m/s, km/h, knots,
+  mph).
+- Fixes for the open upstream issues #113, #106, #116, #119 and #114, and the
+  Private Space row moved to the end of the list (#120).
+
+This build is signed differently from the F-Droid one, so Android will not
+install it over it: export your settings first (Settings → Backup → Export settings), uninstall,
+install this, and import them again.
+
 ## Install
 
 [<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="70">](https://f-droid.org/packages/dev.victorialauncher/)

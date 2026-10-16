@@ -4,6 +4,7 @@ package dev.victorialauncher.data
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.content.pm.ShortcutInfo
@@ -99,14 +100,15 @@ class AppRepository(
     fun queryAllApps(privateSpace: PrivateSpace = privateSpace()): List<AppInfo> {
         val profiles = runCatching { userManager.userProfiles }.getOrNull().orEmpty()
         val mainUser = Process.myUserHandle()
+        // One call for the lot: asking per package turns a list build into hundreds of round
+        // trips to the package manager. And one for every profile, not one each: it answers
+        // for the profile we run in whichever profile is being listed.
+        val installTimes = installTimes()
         return profiles
             .flatMap { user ->
                 val serial = listableSerial(user, mainUser) ?: return@flatMap emptyList()
                 val work = isWorkProfile(user, mainUser)
                 val privateProfile = userType(user) == USER_TYPE_PROFILE_PRIVATE
-                // One call for the lot: asking per package turns a list build into
-                // hundreds of round trips to the package manager.
-                val installTimes = installTimes()
                 // Asking about a profile we are not the launcher for throws rather than
                 // returning nothing, and one inaccessible profile must not lose the rest.
                 runCatching { launcherApps.getActivityList(null, user) }
@@ -582,6 +584,12 @@ class AppRepository(
     // label a second time through an English configuration, which is a whole resource table
     // per app — so it is only ever asked for a name that has no A-Z letter of its own, and the
     // answer is kept.
+    //
+    // Guarded by itself: the list's model and the one a search for hidden apps runs against are
+    // built at the same moment, each on a thread of its own, and both ask. A plain map written
+    // from two threads at once can lose entries or corrupt itself. Held through the load rather
+    // than only around the map, so the second to ask for a name finds the first one's answer
+    // instead of loading it again.
     private val englishLabels = mutableMapOf<String, String?>()
 
     /**
@@ -592,19 +600,21 @@ class AppRepository(
      */
     fun englishLabel(app: AppInfo): String? {
         if (app.kind != EntryKind.APP) return null
-        return englishLabels.getOrPut(app.key) {
-            runCatching {
-                val info = pm.getActivityInfo(app.componentName, 0)
-                val labelRes = if (info.labelRes != 0) info.labelRes else info.applicationInfo.labelRes
-                if (labelRes == 0) return@runCatching null
-                val res = pm.getResourcesForApplication(info.applicationInfo)
-                val config = Configuration(res.configuration).apply { setLocale(Locale.ENGLISH) }
-                res.getString(labelRes).takeIf { it.isNotBlank() }?.let { english ->
-                    // The context-adjusted resources fall back to the default language when an app
-                    // ships no English, which just hands the same name back.
-                    Resources(res.assets, res.displayMetrics, config).getString(labelRes)
-                }
-            }.getOrNull()
+        return synchronized(englishLabels) {
+            englishLabels.getOrPut(app.key) {
+                runCatching {
+                    val info = pm.getActivityInfo(app.componentName, 0)
+                    val labelRes = if (info.labelRes != 0) info.labelRes else info.applicationInfo.labelRes
+                    if (labelRes == 0) return@runCatching null
+                    val res = pm.getResourcesForApplication(info.applicationInfo)
+                    val config = Configuration(res.configuration).apply { setLocale(Locale.ENGLISH) }
+                    res.getString(labelRes).takeIf { it.isNotBlank() }?.let { english ->
+                        // The context-adjusted resources fall back to the default language when an app
+                        // ships no English, which just hands the same name back.
+                        Resources(res.assets, res.displayMetrics, config).getString(labelRes)
+                    }
+                }.getOrNull()
+            }
         }
     }
 
@@ -699,5 +709,46 @@ class AppRepository(
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         runCatching { context.startActivity(intent) }
+    }
+
+    /**
+     * Whether the system will let this app be uninstalled, so a menu offers it only where it
+     * can be done. A binder call: ask it off the main thread.
+     *
+     * A system app that has never been updated is part of the firmware, and the uninstaller
+     * can only refuse it. One that has been updated is offered, because the same screen then
+     * removes the update and puts the factory version back. Read for the app's own profile —
+     * a work or private copy is a separate install with flags of its own — and when nothing
+     * can be read, the answer is no rather than an item that leads nowhere.
+     */
+    fun canUninstall(app: AppInfo): Boolean {
+        if (app.kind != EntryKind.APP) return false
+        val pkg = app.componentName.packageName
+        if (pkg == context.packageName) return false
+        val mainUser = Process.myUserHandle()
+        val user = app.user ?: mainUser
+        val info = runCatching { launcherApps.getApplicationInfo(pkg, 0, user) }.getOrNull()
+            ?: (if (user == mainUser) runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() else null)
+            ?: return false
+        val system = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+        val updated = (info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+        return !system || updated
+    }
+
+    /**
+     * Hands the app to the system's own uninstall confirmation, which is what removes it; the
+     * list follows once it has gone, through the package callbacks already watching for that.
+     */
+    fun uninstall(app: AppInfo) {
+        if (app.kind != EntryKind.APP) return
+        val intent = Intent(Intent.ACTION_DELETE, Uri.fromParts("package", app.componentName.packageName, null))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // Without it the uninstaller looks for the package in our own profile, and a work or
+        // private copy is either not found there or, worse, the main one is offered instead.
+        val user = app.user
+        if (user != null && user != Process.myUserHandle()) intent.putExtra(Intent.EXTRA_USER, user)
+        runCatching { context.startActivity(intent) }.onFailure {
+            Toast.makeText(context, R.string.uninstall_failed, Toast.LENGTH_SHORT).show()
+        }
     }
 }

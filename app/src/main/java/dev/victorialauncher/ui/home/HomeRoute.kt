@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.ui.platform.LocalLayoutDirection
 import kotlin.math.roundToInt
@@ -50,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.lifecycle.Lifecycle
@@ -57,7 +59,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import dev.victorialauncher.TypedKey
 import dev.victorialauncher.VictoriaApp
 import dev.victorialauncher.data.AppInfo
+import dev.victorialauncher.data.DEFAULT_MINDFUL_SECONDS
 import dev.victorialauncher.data.EntryKind
+import dev.victorialauncher.data.MindfulTally
 import dev.victorialauncher.data.restoreConcealed
 import dev.victorialauncher.data.AzStripVisibility
 import dev.victorialauncher.data.EdgeSide
@@ -72,6 +76,7 @@ import dev.victorialauncher.data.PaddingSlot
 import dev.victorialauncher.data.folderToken
 import dev.victorialauncher.media.NowPlayingBus
 import dev.victorialauncher.media.isListenerEnabled
+import dev.victorialauncher.media.openNowPlayingApp
 import dev.victorialauncher.service.SystemUi
 import dev.victorialauncher.ui.applist.AppListModel
 import dev.victorialauncher.ui.applist.AppListScreen
@@ -94,6 +99,7 @@ import androidx.compose.runtime.Immutable
 import android.content.res.Configuration
 import android.net.Uri
 import dev.victorialauncher.R
+import java.time.LocalDate
 
 /** Width of the invisible strip at each screen edge that opens the app list. */
 /** Android only honors this much gesture exclusion per side, so spend it on the strip. */
@@ -259,8 +265,26 @@ fun HomeRoute(
     var homeEditMode by remember { mutableStateOf(false) }
     var folderPickerFor by remember { mutableStateOf<AppInfo?>(null) }
 
+    // Read here, where every launch passes through and has to know at once whether to stop.
+    // The tally too, though only the pause shows it: collected there, it would first draw the
+    // empty start value and then jump to today's numbers a frame later.
+    val mindfulApps by app.prefs.mindfulApps.collectAsState(initial = emptySet())
+    val mindfulTally by app.prefs.mindfulTally.collectAsState(initial = emptyMap())
+    val mindfulSeconds by app.prefs.mindfulSeconds.collectAsState(initial = DEFAULT_MINDFUL_SECONDS)
+    // The app waiting behind a pause, or null while there is none on screen.
+    var mindfulFor by remember { mutableStateOf<AppInfo?>(null) }
+    // What the press behind that pause still has to do once its app has actually opened — a
+    // folder set to close after a launch — or null for nothing. Run only if Open starts it.
+    var afterPauseOpen by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val doubleTapHomeLock by app.prefs.doubleTapHomeLock.collectAsState(initial = false)
+
     val nowPlaying by NowPlayingBus.state.collectAsState()
-    val listenerGranted = remember(homeIntentTick) { isListenerEnabled(context) }
+    // Asked again each time the launcher comes back to the front, not only on HOME. Access is
+    // granted on a system screen, and coming back from it with BACK left this stale: with access
+    // just granted and nothing playing, the block kept its paddings around a card that draws
+    // nothing; with access taken away, the card asking for it never came back.
+    var listenerGranted by remember { mutableStateOf(isListenerEnabled(context)) }
+    LaunchedEffect(homeIntentTick) { listenerGranted = isListenerEnabled(context) }
     // Don't reserve the block (or its padding) unless there is something to render:
     // no live session means the whole thing collapses, padding included.
     val nowPlayingHasContent = settings.nowPlayingEnabled && (!listenerGranted || nowPlaying != null)
@@ -290,7 +314,10 @@ fun HomeRoute(
         }
     val band = liveBand ?: storedBand ?: favBand ?: ScrubBand.fallbackFor(viewportHeightPx)
 
-    /** Locking is a strip gesture now, so the toast that explains it lives with the strip. */
+    /**
+     * The strip's double tap and the wallpaper's both lock through this, so either one says the
+     * same thing when the accessibility service it needs is off.
+     */
     fun lockOrExplain() {
         if (!SystemUi.lockScreen()) {
             Toast.makeText(
@@ -333,7 +360,7 @@ fun HomeRoute(
         if (typedToSearch.isEmpty()) return@LaunchedEffect
         val taken = typedToSearch
         onTypedToSearchHandled(taken)
-        if (!settings.appListSearch || homeEditMode || bandEditMode) return@LaunchedEffect
+        if (!settings.appListSearch || homeEditMode || bandEditMode || mindfulFor != null) return@LaunchedEffect
         if (!appListVisible) {
             appListVisible = true
             openAnim.snapTo(openDistancePx)
@@ -371,16 +398,46 @@ fun HomeRoute(
     // The one place a row press is turned into something happening. Every row in the launcher
     // arrives here, so a row that is not an app is recognised once, here, rather than in each
     // of the four places a press is wired up.
-    fun launchEntry(entry: AppInfo): Boolean = when (entry.kind) {
+    fun launchEntry(entry: AppInfo): Boolean = when {
+        // Nothing opens past a pause still waiting for an answer. Its scrim takes every touch,
+        // but TalkBack and a hardware keyboard press the rows under it without touching them.
+        mindfulFor != null -> false
         // Handed off rather than done here: locking or unlocking is several binder calls and
         // possibly the system's own authentication screen, which is not a press's work to do
         // on the main thread. True because the press was acted on — there is simply nothing
         // coming to the foreground to wait for.
-        EntryKind.PRIVATE_SPACE -> {
+        entry.kind == EntryKind.PRIVATE_SPACE -> {
             onTogglePrivateSpace()
             true
         }
+        // An app marked to pause waits behind the pause instead, which opens it from there if
+        // the answer is still yes. False because nothing is coming to the foreground yet, so
+        // the list is put away as after a launch that did not happen, and the pause stands
+        // over the home screen rather than over the list. Edit layout is never interrupted.
+        // Nor is a shortcut its publisher has switched off: it cannot start, so the launch
+        // below explains that at once instead of after a countdown spent waiting for nothing.
+        entry.key in mindfulApps && !entry.disabled && !homeEditMode && !bandEditMode -> {
+            mindfulFor = entry
+            // A new pause never inherits what an earlier press left to do.
+            afterPauseOpen = null
+            false
+        }
         else -> app.appRepository.launch(entry)
+    }
+
+    // How a pause ends: opened anyway, or let go. Counted on the day it ended. Open counts as
+    // opened only when something did start — an app uninstalled while its pause stood starts
+    // nothing — and an Open that started nothing is counted neither way.
+    fun endPause(open: Boolean) {
+        val entry = mindfulFor ?: return
+        val after = afterPauseOpen
+        mindfulFor = null
+        afterPauseOpen = null
+        val day = LocalDate.now().toEpochDay()
+        val started = open && app.appRepository.launch(entry)
+        if (!open || started) scope.launch { app.prefs.recordMindful(entry.key, day, opened = started) }
+        if (started) after?.invoke()
+        if (!open) closeAppList()
     }
 
     LaunchedEffect(settings.edgeSide) { scrub.syncRestingSide(settings.edgeSide) }
@@ -440,7 +497,19 @@ fun HomeRoute(
                 // later departure.
                 Lifecycle.Event.ON_PAUSE ->
                     if (keepListThroughPause) keepListThroughPause = false else closeAppList(snap = true)
-                Lifecycle.Event.ON_RESUME -> keepListThroughPause = false
+                // Left rather than answered: the screen going off, a call or another app coming
+                // in decided nothing, so the pause goes without being counted either way. Not on
+                // ON_PAUSE: HOME brings one too, since Android pauses an activity before handing
+                // it a new intent, and HOME over a pause is an answer, counted where
+                // homeIntentTick arrives below.
+                Lifecycle.Event.ON_STOP -> {
+                    mindfulFor = null
+                    afterPauseOpen = null
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    keepListThroughPause = false
+                    listenerGranted = isListenerEnabled(context)
+                }
                 else -> Unit
             }
         }
@@ -448,7 +517,11 @@ fun HomeRoute(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(homeIntentTick) {
-        if (homeIntentTick > 0) closeAppList(snap = true)
+        if (homeIntentTick > 0) {
+            // HOME over a pause is going home instead, which is what Never mind does.
+            endPause(open = false)
+            closeAppList(snap = true)
+        }
     }
 
     // The gap left for the back gesture, per side. Followed from the system when automatic,
@@ -472,6 +545,18 @@ fun HomeRoute(
         EdgeSide.LEFT -> insetLeftDp
         EdgeSide.RIGHT -> insetRightDp
         EdgeSide.BOTH -> maxOf(insetLeftDp, insetRightDp)
+    }
+
+    // A corner button stands at the foot of one edge, the start when the favorites lean right
+    // and the end otherwise, as HomeScreen places it, and the zone on that edge lies over it.
+    // That much of the edge is left to the button for as long as the button is on screen
+    // (#113); with the list up it is not, and the whole edge scrubs as before.
+    val cornerSide = if (settings.alignment == HomeAlignment.RIGHT) EdgeSide.LEFT else EdgeSide.RIGHT
+    val navigationBarBottomPx = WindowInsets.navigationBars.getBottom(densityNow)
+    val cornerKeepOutPx = if ((cornerButtonApp != null || cornerButtonIsSearch) && !appListVisible) {
+        navigationBarBottomPx + with(densityNow) { cornerButtonReachDp(settings.iconSizeDp).toPx() }
+    } else {
+        0f
     }
 
     LaunchedEffect(settings.edgeSide, settings.edgeZoneWidthDp, insetLeftDp, insetRightDp, view, band) {
@@ -500,7 +585,9 @@ fun HomeRoute(
                 // Starting where the strip now starts. Excluding from the very edge while the
                 // strip itself has been held inward is what made the setting do nothing: the
                 // touch area moved, and the system was still being told to keep its back
-                // gesture out of the pixels the setting had just handed back to it.
+                // gesture out of the pixels the setting had just handed back to it. The strip
+                // reaches into that gap again, but only to wait for the system to pass on a
+                // touch, so the gap stays the system's here.
                 val rects = buildList {
                     if (settings.edgeSide != EdgeSide.RIGHT) {
                         add(Rect(insetLeftPx, exTop, insetLeftPx + widthPx, exBottom))
@@ -598,7 +685,10 @@ fun HomeRoute(
                 // Setting the range takes the home screen out of the picture entirely, edit
                 // layout's own controls with it. The band is judged against the wallpaper it
                 // will sit on, not against the chrome it happens to overlap.
-                .graphicsLayer { alpha = homeContentAlpha },
+                .graphicsLayer { alpha = homeContentAlpha }
+                // Under a pause the rows are out of reach of the finger, and this keeps them out
+                // of TalkBack's reach as well, so the pause is all it finds to read or press.
+                .then(if (mindfulFor != null) Modifier.clearAndSetSemantics {} else Modifier),
         ) {
             HomeScreen(
                 stripInsetSide = if (!stripAlwaysVisible) null else settings.edgeSide,
@@ -647,6 +737,31 @@ fun HomeRoute(
                 nowPlayingEnabled = settings.nowPlayingEnabled,
                 nowPlayingHeightDp = settings.nowPlayingHeightDp,
                 onResizeNowPlaying = { scope.launch { app.prefs.setNowPlayingHeightDp(it) } },
+                onOpenNowPlaying = {
+                    // The card is one more way into the player, so a player marked to pause
+                    // pauses here as it does from its own row. Its main-profile row only: the
+                    // listener hears this profile's sessions and no other's. Not in edit
+                    // layout, which never pauses, so the card opens what is playing there as
+                    // it always has rather than the player's front screen.
+                    val playing = NowPlayingBus.state.value?.controller?.packageName
+                        ?.takeIf { !homeEditMode && !bandEditMode }
+                    val marked = playing?.let { pkg ->
+                        appsByKey.values.firstOrNull {
+                            it.kind == EntryKind.APP && it.packageName == pkg &&
+                                it.userSerial == 0L && it.key in mindfulApps
+                        }
+                    }
+                    if (marked != null) {
+                        launchEntry(marked)
+                    } else if (!openNowPlayingApp(context)) {
+                        // Said so, rather than leaving a tap that looks ignored.
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.now_playing_open_failed),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
                 widgetActions = widgetActions,
                 onLaunch = { launchEntry(it) },
                 // Remove means the same thing to whoever taps it either way: take this off my
@@ -662,7 +777,14 @@ fun HomeRoute(
                         }
                     }
                 },
-                onOpenFolderApp = { launchEntry(it) },
+                onOpenFolderApp = { entry, opened ->
+                    if (launchEntry(entry)) {
+                        opened()
+                    } else if (mindfulFor?.key == entry.key) {
+                        // Waiting behind a pause: done once Open has started it, if it does.
+                        afterPauseOpen = opened
+                    }
+                },
                 onRenameFolder = { folder, name ->
                     scope.launch { app.prefs.upsertFolder(folder.copy(name = name)) }
                 },
@@ -793,6 +915,18 @@ fun HomeRoute(
                 onAppInfo = { app.appRepository.openAppInfo(it) },
                 onUnpinShortcut = { app.appRepository.unpin(it) },
                 onOpenSettings = { onNavigate("settings") },
+                canUninstall = { app.appRepository.canUninstall(it) },
+                onUninstall = { app.appRepository.uninstall(it) },
+                mindfulApps = mindfulApps,
+                onSetMindful = { appInfo, pause -> scope.launch { app.prefs.setMindful(appInfo.key, pause) } },
+                // Edit layout never sees it, since the detector stands down there, and nor does
+                // the open list, which takes every touch before the home screen can; checked
+                // again here so neither rests on how the layers happen to be stacked.
+                onDoubleTapWallpaper = if (doubleTapHomeLock) {
+                    { if (!homeEditMode && !appListVisible) lockOrExplain() }
+                } else {
+                    null
+                },
             )
         }
 
@@ -895,11 +1029,19 @@ fun HomeRoute(
                 listState = appListState,
                 // Distance still to travel, which is exactly what the collapse transform
                 // takes: the list arrives scaled down and faded, and grows into place.
-                enterPullPx = openDistancePx - openAnim.value,
+                // Handed over unread, so only the list's draw follows the animation.
+                enterPullPx = { openDistancePx - openAnim.value },
                 query = appListQuery,
                 onQueryChange = { appListQuery = it },
                 alignment = settings.appListAlignment,
                 iconSide = settings.iconSide,
+                canUninstall = { app.appRepository.canUninstall(it) },
+                onUninstall = { app.appRepository.uninstall(it) },
+                mindfulApps = mindfulApps,
+                onSetMindful = { appInfo, pause -> scope.launch { app.prefs.setMindful(appInfo.key, pause) } },
+                // Left to go once the app it went to is in front, as after a launch, so the home
+                // screen does not flash up in between.
+                onActionStarted = { closeAfterLaunch() },
             )
         }
 
@@ -1007,6 +1149,8 @@ fun HomeRoute(
                         scope.launch { openAnim.snapTo(openDistancePx) }
                     },
                     onDoubleTap = if (settings.doubleTapToLock) ({ lockOrExplain() }) else null,
+                    bottomKeepOutPx = if (side == cornerSide) cornerKeepOutPx else 0f,
+                    viewportHeightPx = viewportHeightPx,
                     // Aligned to the top when it is confined, because the offset that puts it
                     // against the band is measured from there. Centred, it would be placed by
                     // half the leftover height and then pushed down again by the whole of the
@@ -1021,6 +1165,22 @@ fun HomeRoute(
                     ),
                 )
             }
+        }
+
+        // Last, so it lies over everything, the edge zones included: a finger on the edge must
+        // not open the list from under a pause that is still waiting for an answer.
+        mindfulFor?.let { entry ->
+            val today = remember(entry.key) { LocalDate.now().toEpochDay() }
+            MindfulPause(
+                app = entry,
+                label = nameOverrides[entry.key] ?: entry.label,
+                seconds = mindfulSeconds,
+                day = MindfulTally.read(mindfulTally[entry.key], today),
+                epochDay = today,
+                scrimColor = Color(settings.dimColor),
+                onNeverMind = { endPause(open = false) },
+                onOpen = { endPause(open = true) },
+            )
         }
     }
 }

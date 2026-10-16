@@ -48,7 +48,7 @@ fun HiddenAppsScreen(
     onToggleHidden: (AppInfo, Boolean) -> Unit,
     onBack: () -> Unit,
     /**
-     * Wording, so the one screen can serve the two lists that have this exact shape.
+     * Wording, so the one screen can serve every list that has this exact shape.
      *
      * Keeping apps out of the computed favorites is the same job as hiding them — a set of
      * apps, a switch each, the chosen ones first — and the only thing that differs is what the

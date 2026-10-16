@@ -11,7 +11,7 @@ MainActivity.kt                 Activity, window setup, status-bar peek
 VictoriaApp.kt                  Application; owns Prefs, repositories, widget host
 data/
   AppInfo.kt                    component + label; `key` is the flattened component name
-  AppRepository.kt              PackageManager queries, launch, app-info intents
+  AppRepository.kt              LauncherApps queries, launch, app-info and uninstall intents
   IconPackRepository.kt         icon-pack discovery, appfilter.xml parsing, icon lookup
   Prefs.kt                      DataStore<Preferences>: every setting, hidden apps, favorites
   Folder.kt                     folder model + JSON persistence + favorites token encoding
@@ -20,6 +20,7 @@ ui/
   VictoriaNavHost.kt            collects settings once, hosts the navigation graph
   home/HomeRoute.kt             home destination: home screen, app-list overlay, edge zones
   home/HomeScreen.kt            widget slot + favorites/folders column + edit mode
+  home/MindfulPause.kt          the countdown shown before an app marked to pause opens
   applist/AppListScreen.kt      A-Z list, pull-to-collapse, per-app menus
   applist/EdgeScrubber.kt       the A-Z strip that bows around the fingertip
   applist/EdgeTouchZone.kt      the invisible edge strip that opens and scrubs the list
@@ -92,8 +93,9 @@ The app requests **no `INTERNET` permission**. It cannot phone home.
 | `QUERY_ALL_PACKAGES` | A launcher must enumerate every installed app, icon pack and widget provider. Without it `PackageManager` filters almost everything out on Android 11+. | No |
 | `EXPAND_STATUS_BAR` | Needed by the pre-Android-12 reflection fallback for opening the notification shade. | No |
 | `VIBRATE` | The haptic tick as the finger crosses a letter. Respects the system touch-feedback setting, and can be turned off in Settings. | No |
+| `REQUEST_DELETE_PACKAGES` | Uninstall in the long-press menu hands the app to the system's own confirmation. A normal permission, granted at install; without it Android 9+ closes that confirmation unshown for an app targeting 9+. | No |
 | Accessibility service | The only sanctioned way to open the notification shade or lock the screen — neither has a public API. The service ignores every event it receives and reads nothing. | Yes — the swipe-down and double-tap-to-lock gestures simply report that they need it |
-| Notification listener | Reads the active media session for the Now Playing card. | Yes — off by default |
+| Notification listener | Reads the active media session for the Now Playing card and counts notifications for the badges. Only while the notification line is turned on does it take anything more from a notification: who each app's newest one is from, which only a message, an email or a call says, and what it says only when the line is set to show that too. Nothing at all from a notification its app marks secret, or from one the shade is hiding because its app is paused or Do Not Disturb keeps it off the list. Each line stays with the profile that posted it. Held in memory only, never stored or logged. | Yes — off by default |
 
 `BIND_APPWIDGET` is **not** requested: it is signature-level and is never granted to
 an ordinary app. `AppWidgetHost` and `bindAppWidgetIdIfAllowed` work without it for
@@ -101,11 +103,11 @@ whichever app is the current Home.
 
 ## Known gaps
 
-- No search in the A-Z list; the edge scrubber is the only way to find an app.
-- Work-profile apps are invisible. `AppRepository` uses `PackageManager` rather than
-  `LauncherApps`, and `AppInfo` carries no `UserHandle`. Fixing this changes
-  `AppInfo.key`, which is the persisted favorites key, so it needs a data migration.
-- Double-tap-to-lock works only in the app list, not on the home screen.
+- Pause before opening stands only in front of what is opened from Victoria itself. An
+  app's own shortcuts, from the sideways swipe on its row, open without it, and so does
+  anything started from outside the launcher. A web search, or a link, call, text, email,
+  timer or alarm typed into search, goes to whichever app handles it, with no pause. It is a
+  speed bump, not a lock.
 - No Baseline Profile. Generating one needs a device or emulator; it is the largest
   remaining first-launch win.
 - Unit tests cover only framework-free logic. Anything touching `PackageManager`,

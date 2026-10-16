@@ -31,11 +31,22 @@ import androidx.core.graphics.drawable.toBitmap
 import dev.victorialauncher.media.NotificationCountBus
 import dev.victorialauncher.VictoriaApp
 import dev.victorialauncher.data.AppInfo
+import dev.victorialauncher.data.EntryKeys
 import dev.victorialauncher.data.EntryKind
 import dev.victorialauncher.data.IconShape
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 
 /** Per-app icon overrides are stored either as a gallery `content://` URI or as `pack:<pkg>:<drawable>`. */
@@ -70,15 +81,72 @@ private object IconCache {
     fun get(key: String): ImageBitmap? = cache.get(key)
     fun put(key: String, value: ImageBitmap) = cache.put(key, value)
 
-    /**
-     * Dropped wholesale when a package is added, removed or changed: an app that ships a new
-     * icon in an update keeps none of the key's components, so nothing else would invalidate
-     * the stale bitmap.
-     */
+    /** Dropped wholesale when what every icon is drawn against changes, such as a profile. */
     fun clear() = cache.evictAll()
+
+    /**
+     * These packages' bitmaps and no others, when they are added, removed or changed: an app
+     * that ships a new icon in an update keeps none of the key's components, so nothing else
+     * would invalidate the stale bitmap. That is their apps and the shortcuts they published,
+     * and anything drawn from one of them as an icon pack, since a pack's update changes the
+     * pictures of apps that are not its own. Returns the keys that went.
+     *
+     * One snapshot for the whole burst, since each copies every entry in the cache.
+     */
+    fun evictPackages(packages: Collection<String>): Set<String> {
+        if (packages.isEmpty()) return emptySet()
+        val stale = HashSet<String>()
+        val keys = cache.snapshot().keys
+        for (packageName in packages) {
+            val asPack = "|$packageName|"
+            val asPackOverride = "|$ICON_PACK_OVERRIDE_PREFIX$packageName:"
+            keys.filterTo(stale) { key ->
+                EntryKeys.belongsToPackage(key, packageName) ||
+                    key.contains(asPack) ||
+                    key.contains(asPackOverride)
+            }
+        }
+        stale.forEach { cache.remove(it) }
+        return stale
+    }
 }
 
-fun clearIconCache() = IconCache.clear()
+private val iconCacheGenerationFlow = MutableStateFlow(0)
+
+/**
+ * Moves on whenever the cache is emptied, so the warm pass knows to run again. That pass is
+ * otherwise keyed on the app list, and a reload that finds the same apps publishes nothing new:
+ * after a clear the cache was refilled by the rows themselves, an icon at a time on the main
+ * thread, during the very scroll that asked for them (#119).
+ */
+val iconCacheGeneration: StateFlow<Int> = iconCacheGenerationFlow.asStateFlow()
+
+fun clearIconCache() {
+    IconCache.clear()
+    iconCacheGenerationFlow.update { it + 1 }
+}
+
+/**
+ * Not replayed, since a key that went before anyone was listening has nobody to draw it; and a
+ * burst lost to a full buffer only leaves its icons to their rows, as any icon not yet warm is.
+ */
+private val iconEvictionsFlow = MutableSharedFlow<Set<String>>(
+    extraBufferCapacity = 16,
+    onBufferOverflow = BufferOverflow.DROP_OLDEST,
+)
+
+/**
+ * The cache keys each [evictPackageIcons] threw out, for the warm pass to draw again and nothing
+ * else. These do not move [iconCacheGeneration]: that ran the whole pass for one republished
+ * shortcut, and with more icons than the cache holds, a pass in list order missed on every one
+ * of them and pushed out the very bitmaps the home screen and the list would ask for next.
+ */
+val iconEvictions: SharedFlow<Set<String>> = iconEvictionsFlow.asSharedFlow()
+
+fun evictPackageIcons(packages: Collection<String>) {
+    val evicted = IconCache.evictPackages(packages)
+    if (evicted.isNotEmpty()) iconEvictionsFlow.tryEmit(evicted)
+}
 
 // The class name is in here for the rows whose key alone cannot tell two pictures apart: the
 // private-space row keeps one key across locking and unlocking, and the padlock it draws is
@@ -105,9 +173,12 @@ data class IconStyle(
  * the A-Z list rasterises a screenful of icons synchronously during composition, which is
  * what made it take a beat to appear.
  *
- * Work is fanned out across the dispatcher rather than run one icon at a time, and
+ * Work is fanned out over a few threads rather than run one icon at a time, and
  * [priorityKeys] (favorites and folder members) go first so the home screen is covered before
  * the long tail of everything else installed.
+ *
+ * [only], when given, is the cache keys to draw: the ones [iconEvictions] reported, so a package
+ * that changed has its own icons drawn again without every other one being looked over too.
  */
 suspend fun warmIconCache(
     context: Context,
@@ -117,14 +188,24 @@ suspend fun warmIconCache(
     px: Int,
     style: IconStyle,
     priorityKeys: Set<String> = emptySet(),
+    only: Set<String>? = null,
 ) {
     if (px <= 0 || apps.isEmpty()) return
     val victoriaApp = context.applicationContext as VictoriaApp
 
+    fun ownStyle(override: String?): IconStyle {
+        val styled = override == null && iconPack == null
+        return if (styled) style else style.copy(shape = IconShape.SYSTEM, themed = false)
+    }
+
+    fun keyOf(app: AppInfo): String {
+        val override = overrides[app.key]
+        return iconCacheKey(app, iconPack, override, px, ownStyle(override))
+    }
+
     fun warm(app: AppInfo) {
         val override = overrides[app.key]
-        val styled = override == null && iconPack == null
-        val own = if (styled) style else style.copy(shape = IconShape.SYSTEM, themed = false)
+        val own = ownStyle(override)
         val key = iconCacheKey(app, iconPack, override, px, own)
         if (IconCache.get(key) != null) return
         runCatching {
@@ -134,14 +215,25 @@ suspend fun warmIconCache(
         }
     }
 
-    val (first, rest) = apps.partition { it.key in priorityKeys }
     // Explicitly off the caller's dispatcher: this is invoked from a LaunchedEffect, which
     // runs on Main, and coroutineScope/async would inherit it.
-    withContext(Dispatchers.Default) {
+    withContext(warmDispatcher) {
+        val targets = if (only == null) apps else apps.filter { keyOf(it) in only }
+        val (first, rest) = targets.partition { it.key in priorityKeys }
         for (group in listOf(first, rest)) {
             if (group.isEmpty()) continue
             group.chunked(CHUNK_SIZE)
-                .map { chunk -> async { chunk.forEach(::warm) } }
+                .map { chunk ->
+                    async {
+                        // Checked per icon because nothing in warm() suspends: a pass replaced
+                        // by a newer one would otherwise hold its threads to the end of every
+                        // chunk it had started, and the newer pass would queue behind it.
+                        chunk.forEach { app ->
+                            ensureActive()
+                            warm(app)
+                        }
+                    }
+                }
                 .awaitAll()
         }
     }
@@ -149,6 +241,15 @@ suspend fun warmIconCache(
 
 /** Big enough that per-task overhead stays negligible against a drawable decode. */
 private const val CHUNK_SIZE = 16
+
+/**
+ * Half the cores, and at least one. The warm pass runs while the list is being opened and
+ * scrolled, and spread over every core it competed with the main thread and RenderThread for
+ * the very frames it is there to keep smooth (#119).
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+private val warmDispatcher =
+    Dispatchers.Default.limitedParallelism((Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1))
 
 /**
  * Icon pack and per-app overrides, provided once for the whole tree. Collecting these flows

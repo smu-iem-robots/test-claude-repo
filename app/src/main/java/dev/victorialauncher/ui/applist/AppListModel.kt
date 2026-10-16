@@ -3,6 +3,7 @@ package dev.victorialauncher.ui.applist
 
 import androidx.compose.runtime.Immutable
 import dev.victorialauncher.data.AppInfo
+import dev.victorialauncher.data.EntryKind
 import android.icu.text.Transliterator
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -192,7 +193,8 @@ fun buildAppListModel(
     /** Heading and how many, for a section of what was installed most recently. */
     recentSection: Pair<String, Int>? = null,
 ): AppListModel {
-    val all = apps.filter { it.key !in hidden }
+    // Out of the alphabet before anything is filed; see listedLast.
+    val (trailing, all) = apps.filter { it.key !in hidden }.partition { listedLast(it.kind) }
     // Lifted out of the alphabet entirely rather than listed twice. A private app and its main
     // profile twin have the same name, which is the whole reason for asking.
     val visible = if (privateSectionLabel == null) all else all.filterNot { it.privateProfile }
@@ -234,15 +236,30 @@ fun buildAppListModel(
         }
     }
 
+    // After the sections as well, so it is the last thing in the list whatever else is shown.
+    // No heading: the row names itself, and a heading over it would say the same words again.
+    trailing.forEach { rows += AppListRow.Entry(it) }
+
     return AppListModel(rows, letterIndex)
 }
+
+/**
+ * Whether a row goes at the very end of the list rather than under a letter.
+ *
+ * Only the private space's padlock does. It is a switch, not an app, and filed by its name it
+ * sat in P among the apps, and could put a P on the strip of a phone with no app there (#120).
+ */
+internal fun listedLast(kind: EntryKind): Boolean = kind == EntryKind.PRIVATE_SPACE
 
 /**
  * The same list with only the entries [match] accepts, and only the headers still holding
  * something. Rebuilt rather than filtered in place: letterIndex stores row indices, so
  * removing any row invalidates every index after it.
+ *
+ * Asked about the row rather than the app, so the answer can depend on where in the list an
+ * app is shown as well as on which app it is.
  */
-fun AppListModel.filtered(match: (AppInfo) -> Boolean): AppListModel {
+fun AppListModel.filtered(match: (AppListRow.Entry) -> Boolean): AppListModel {
     val kept = mutableListOf<AppListRow>()
     val newIndex = mutableListOf<Pair<Char, Int>>()
     var pendingHeader: AppListRow.Header? = null
@@ -262,10 +279,15 @@ fun AppListModel.filtered(match: (AppInfo) -> Boolean): AppListModel {
         }
         when (row) {
             is AppListRow.Header -> pendingHeader = row
-            is AppListRow.Entry -> if (match(row.app)) {
-                // Recorded before the heading is added, so the letter points at the heading
-                // where there is one and at its first app where there is not.
-                if (!letterKept) {
+            is AppListRow.Entry -> if (match(row)) {
+                if (listedLast(row.app.kind)) {
+                    // Under no heading and no letter in the full list, so under none here: the
+                    // heading last passed belongs to rows above it that the query left out, and
+                    // a search for the padlock came back under "Z" or "Recently installed".
+                    pendingHeader = null
+                } else if (!letterKept) {
+                    // Recorded before the heading is added, so the letter points at the heading
+                    // where there is one and at its first app where there is not.
                     letter?.let { newIndex += it to kept.size }
                     letterKept = true
                 }
@@ -284,16 +306,14 @@ fun AppListModel.filtered(match: (AppInfo) -> Boolean): AppListModel {
  * matched every app with a c anywhere in it and Chess sat below Facebook and Microsoft Word.
  * The letters you have typed are almost always the start of the name you mean, then the start
  * of a word inside it, and only failing both is a match in the middle worth anything.
+ *
+ * The package name comes after the name's own bands, deliberately: it is not what anyone typed,
+ * only where the English word survives on a phone that renamed everything. Accents and case are
+ * folded out of both sides first, so "cafe" ranks Café exactly as it ranks Cafe. The bands, and
+ * the initials that follow them, are in SearchMatch.kt.
  */
-fun searchRank(name: String, packageName: String, term: String): Int = when {
-    name.startsWith(term, ignoreCase = true) -> 0
-    name.split(' ', '-', '_', '.').any { it.startsWith(term, ignoreCase = true) } -> 1
-    name.contains(term, ignoreCase = true) -> 2
-    // Last, and deliberately so: a package name is not what anyone typed, it is only where
-    // the English word survives on a phone that renamed everything.
-    packageName.contains(term, ignoreCase = true) -> 3
-    else -> 4
-}
+fun searchRank(name: String, packageName: String, term: String): Int =
+    SearchName(name, packageName).rank(foldForSearch(term))
 
 /**
  * The same list reordered by [rank], keeping the order it already had within each band and

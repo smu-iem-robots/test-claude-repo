@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -67,6 +68,9 @@ import dev.victorialauncher.ui.common.IconStyle
 import dev.victorialauncher.ui.common.LocalIconConfig
 import dev.victorialauncher.ui.common.clearIconCache
 import dev.victorialauncher.ui.common.encodePackOverride
+import dev.victorialauncher.ui.common.evictPackageIcons
+import dev.victorialauncher.ui.common.iconCacheGeneration
+import dev.victorialauncher.ui.common.iconEvictions
 import dev.victorialauncher.ui.common.warmIconCache
 import dev.victorialauncher.ui.home.FavoriteEntry
 import dev.victorialauncher.ui.home.HomeRoute
@@ -82,6 +86,8 @@ import dev.victorialauncher.widget.ClockWidgetProvider
 import dev.victorialauncher.widget.WidgetPickerActivity
 import dev.victorialauncher.widget.WidgetSlotActions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -152,8 +158,8 @@ fun VictoriaNavHost(
      * Takes a state that has just been resolved and acts on what it conceals at once, on the
      * list already in hand, before the reload that will take a moment.
      *
-     * The reload is a full enumeration: every profile, every activity, an icon cache thrown
-     * away and rebuilt. That is long enough to read the names off a home screen, and a lock
+     * The reload is a full enumeration: every profile, every activity, and icons drawn again
+     * for whatever changed. That is long enough to read the names off a home screen, and a lock
      * that only takes effect at the end of it has left them there for exactly that long.
      *
      * Publishes nothing once [pass] has been superseded, for the same reason the reload does
@@ -176,7 +182,9 @@ fun VictoriaNavHost(
 
     DisposableEffect(Unit) {
         val launcherApps = context.getSystemService(LauncherApps::class.java)
-        fun refresh() {
+
+        /** [packages] are the ones whose icons may have changed, or null for every icon. */
+        fun refresh(packages: Collection<String>? = null) {
             scope.launch {
                 // Taken before the read, so anything already enumerating is superseded by the
                 // moment this pass looked rather than by the moment it finished.
@@ -186,9 +194,28 @@ fun VictoriaNavHost(
                 val state = withContext(Dispatchers.Default) { app.appRepository.privateSpace() }
                 adoptPrivateSpace(state, pass)
                 // An app that ships a new icon in an update changes none of the cache
-                // key's components, so nothing else would invalidate the stale bitmap.
-                clearIconCache()
+                // key's components, so nothing else would invalidate the stale bitmap. Only
+                // that app's, where the callback said which: emptying the whole cache for one
+                // republished shortcut is what left the list drawing every icon again (#119).
+                // What went is drawn again below, and nothing else.
+                if (packages == null) clearIconCache() else evictPackageIcons(packages)
                 reloadApps(state, pass)
+            }
+        }
+
+        // Package callbacks come in bursts — one update reports itself more than once, and a
+        // messaging app republishes its conversation shortcuts every few seconds — and each
+        // was a full enumeration of every profile. A burst is gathered into one reload instead.
+        // Not the profile broadcasts below: those carry a private space locking, which has to
+        // leave the screen at once.
+        val pendingPackages = PendingPackages()
+        var pendingRefresh: Job? = null
+        fun refreshSoon(packages: Collection<String>?) {
+            pendingPackages.add(packages)
+            pendingRefresh?.cancel()
+            pendingRefresh = scope.launch {
+                delay(PACKAGE_BURST_SETTLE_MS)
+                refresh(pendingPackages.take())
             }
         }
 
@@ -196,18 +223,23 @@ fun VictoriaNavHost(
         // only ever describe the profile we run in, so an app installed into a work profile or
         // a private space would never reach the list.
         val callback = object : LauncherApps.Callback() {
-            override fun onPackageAdded(packageName: String?, user: UserHandle?) = refresh()
-            override fun onPackageRemoved(packageName: String?, user: UserHandle?) = refresh()
-            override fun onPackageChanged(packageName: String?, user: UserHandle?) = refresh()
-            override fun onPackagesAvailable(names: Array<out String>?, user: UserHandle?, replacing: Boolean) = refresh()
-            override fun onPackagesUnavailable(names: Array<out String>?, user: UserHandle?, replacing: Boolean) = refresh()
+            override fun onPackageAdded(packageName: String?, user: UserHandle?) =
+                refreshSoon(packageName?.let { listOf(it) })
+            override fun onPackageRemoved(packageName: String?, user: UserHandle?) =
+                refreshSoon(packageName?.let { listOf(it) })
+            override fun onPackageChanged(packageName: String?, user: UserHandle?) =
+                refreshSoon(packageName?.let { listOf(it) })
+            override fun onPackagesAvailable(names: Array<out String>?, user: UserHandle?, replacing: Boolean) =
+                refreshSoon(names?.toList())
+            override fun onPackagesUnavailable(names: Array<out String>?, user: UserHandle?, replacing: Boolean) =
+                refreshSoon(names?.toList())
             // A shortcut can be added, renamed, re-iconed or switched off while we are
             // showing it, none of which is a package change.
             override fun onShortcutsChanged(
                 packageName: String,
                 shortcuts: MutableList<ShortcutInfo>,
                 user: UserHandle,
-            ) = refresh()
+            ) = refreshSoon(listOf(packageName))
         }
         runCatching { launcherApps.registerCallback(callback) }
 
@@ -279,6 +311,9 @@ fun VictoriaNavHost(
     val hiddenApps by app.prefs.hiddenApps.collectAsState(initial = emptySet())
     val favoriteKeys by app.prefs.favorites.collectAsState(initial = emptyList())
     val frequentExcluded by app.prefs.frequentExcluded.collectAsState(initial = emptySet())
+    // Collected up here with the others rather than inside its own screen, where the first
+    // frame would list every app as not pausing and then move the chosen ones up a frame later.
+    val mindfulApps by app.prefs.mindfulApps.collectAsState(initial = emptySet())
     val favoritesEverSet by app.prefs.favoritesEverSet.collectAsState(initial = true)
     val edgeZoneBandOnly by app.prefs.edgeZoneBandOnly.collectAsState(initial = false)
     val holdScroll by app.prefs.holdScroll.collectAsState(initial = false)
@@ -335,7 +370,7 @@ fun VictoriaNavHost(
     val showSettingsRow by app.prefs.showSettingsRow.collectAsState(initial = true)
     val cornerButtonKey by app.prefs.cornerButtonKey.collectAsState(initial = null)
     val autoKeyboard by app.prefs.autoKeyboard.collectAsState(initial = false)
-    val lastLetterToLine by app.prefs.lastLetterToLine.collectAsState(initial = false)
+    val lastLetterToLine by app.prefs.lastLetterToLine.collectAsState(initial = true)
     val showFavoriteIcons by app.prefs.showFavoriteIcons.collectAsState(initial = true)
     val favoritesSource by app.prefs.favoritesSource.collectAsState(initial = FavoritesSource.MANUAL)
     val frequentCount by app.prefs.frequentCount.collectAsState(initial = 6)
@@ -394,6 +429,12 @@ fun VictoriaNavHost(
     // set: that screen lists rows, and a hidden app inside a locked private space has no row.
     // Counting the stored set in the subtitle says out loud how many apps are in there.
     val hiddenShownCount = remember(allApps, hiddenApps) { allApps.count { it.key in hiddenApps } }
+    // The same for the apps that pause, and for the same reasons: the stored keys include a
+    // locked private space's and apps since uninstalled. Counted up here, where the list and the
+    // marks are already held for the whole session, rather than by the settings row itself,
+    // which starts again from nothing every time settings opens and showed "No apps pause"
+    // until a full scan of every installed app came back.
+    val mindfulShownCount = remember(allApps, mindfulApps) { allApps.count { it.key in mindfulApps } }
     val foldersById = remember(folders) { folders.associateBy { it.id } }
 
     // A favorites row is an app or a folder; both come out of the same ordered token list.
@@ -457,8 +498,35 @@ fun VictoriaNavHost(
             foreground = scheme.onPrimaryContainer.toArgb(),
         )
     }
-    LaunchedEffect(allApps, iconPackPackage, iconOverrides, listIconPx, priorityKeys, iconStyle) {
+    // Again after the cache is emptied, whether or not the list changed with it.
+    val iconGeneration by iconCacheGeneration.collectAsState()
+    LaunchedEffect(allApps, iconPackPackage, iconOverrides, listIconPx, priorityKeys, iconStyle, iconGeneration) {
         warmIconCache(context, allApps, iconPackPackage, iconOverrides, listIconPx, iconStyle, priorityKeys)
+    }
+    // A package that changed loses only its own bitmaps, and only those are drawn again here.
+    // Running the whole pass for it instead looked over every icon on each burst of shortcut
+    // republishes, and with more icons than the cache holds, a pass in list order missed on
+    // every one and drew the list again (#119). Started once and handed the settings as they are
+    // now, so a change to them never restarts it and loses a burst.
+    val currentApps by rememberUpdatedState(allApps)
+    val currentIconPack by rememberUpdatedState(iconPackPackage)
+    val currentIconOverrides by rememberUpdatedState(iconOverrides)
+    val currentListIconPx by rememberUpdatedState(listIconPx)
+    val currentIconStyle by rememberUpdatedState(iconStyle)
+    val currentPriorityKeys by rememberUpdatedState(priorityKeys)
+    LaunchedEffect(Unit) {
+        iconEvictions.collect { evicted ->
+            warmIconCache(
+                context,
+                currentApps,
+                currentIconPack,
+                currentIconOverrides,
+                currentListIconPx,
+                currentIconStyle,
+                currentPriorityKeys,
+                only = evicted,
+            )
+        }
     }
 
     // Written through the document picker rather than to a path of our own: the file is the
@@ -700,6 +768,7 @@ fun VictoriaNavHost(
             val listenerEnabled = remember(homeIntentTick) { isListenerEnabled(context) }
             SettingsScreen(
                 hiddenCount = hiddenShownCount,
+                mindfulCount = mindfulShownCount,
                 iconPacks = iconPacks,
                 iconPackPackage = iconPackPackage,
                 showAppIcons = showAppIcons,
@@ -928,6 +997,7 @@ fun VictoriaNavHost(
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     )
                 },
+                onOpenRoute = { route -> navController.navigate(route) },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -1049,6 +1119,26 @@ fun VictoriaNavHost(
             )
         }
 
+        composable("settings/mindful") {
+            HiddenAppsScreen(
+                // What a press opens, which is all a pause can stand in front of. The private
+                // space row locks and unlocks instead.
+                allApps = remember(allApps) {
+                    allApps.filter { it.kind == EntryKind.APP || it.kind == EntryKind.SHORTCUT }
+                },
+                hiddenApps = mindfulApps,
+                nameOverrides = nameOverrides,
+                iconSizeDp = iconSizeDp,
+                onToggleHidden = { appInfo, pause ->
+                    scope.launch { app.prefs.setMindful(appInfo.key, pause) }
+                },
+                onBack = { navController.popBackStack() },
+                titleRes = R.string.settings_mindful_apps,
+                countRes = R.string.mindful_picker_count,
+                addRes = R.string.mindful_picker_add,
+            )
+        }
+
         composable("iconpicker/{key}") { entry ->
             val key = entry.arguments?.getString("key")?.let { Uri.decode(it) }.orEmpty()
             val folderId = folderIdFromToken(key)
@@ -1097,3 +1187,10 @@ fun VictoriaNavHost(
  * from one and the rows from the other. Published together, there is no such moment.
  */
 private data class AppsAndSpace(val privateSpace: PrivateSpace, val apps: List<AppInfo>)
+
+/**
+ * How long the package callbacks have to fall quiet before the list is read again. Long enough
+ * to take in one update's several reports, short enough that a newly installed app is there by
+ * the time anyone goes to look for it.
+ */
+private const val PACKAGE_BURST_SETTLE_MS = 300L

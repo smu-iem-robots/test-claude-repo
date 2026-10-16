@@ -25,6 +25,11 @@ data class ClockWidgetConfig(
     val weatherFahrenheit: Boolean,
     /** Package the weather row opens, or null for a row that is not a tap target. */
     val weatherPackage: String?,
+    /**
+     * What the weather row gives the wind in, between the temperature and the condition; off
+     * leaves it out.
+     */
+    val windUnit: WindUnit,
     val showNotifications: Boolean,
     val notificationsSizeSp: Int,
     val showAgenda: Boolean,
@@ -133,6 +138,10 @@ data class ClockWidgetConfig(
                 // who sent it. A list of package names we happened to think of would be wrong
                 // for whoever is not on it.
                 weatherPackage = prefs.getString(key("weatherPkg", widgetId), null),
+                // Off unless chosen, so a widget set up before there was any wind keeps its row.
+                windUnit = runCatching {
+                    WindUnit.valueOf(prefs.getString(key("wind", widgetId), null) ?: WindUnit.OFF.name)
+                }.getOrDefault(WindUnit.OFF),
                 showNotifications = prefs.getBoolean(key("notifications", widgetId), false),
                 showAgenda = prefs.getBoolean(key("agenda", widgetId), false),
                 agendaSizeSp = prefs.getInt(key("agendaSize", widgetId), DEFAULT_ROW_SIZE_SP),
@@ -164,6 +173,7 @@ data class ClockWidgetConfig(
                 .putInt(key("weatherSize", widgetId), config.weatherSizeSp)
                 .putBoolean(key("weatherF", widgetId), config.weatherFahrenheit)
                 .putString(key("weatherPkg", widgetId), config.weatherPackage)
+                .putString(key("wind", widgetId), config.windUnit.name)
                 .putBoolean(key("notifications", widgetId), config.showNotifications)
                 .putBoolean(key("agenda", widgetId), config.showAgenda)
                 .putInt(key("agendaSize", widgetId), config.agendaSizeSp)
@@ -200,6 +210,7 @@ data class ClockWidgetConfig(
                 .remove(key("weatherSize", widgetId))
                 .remove(key("weatherF", widgetId))
                 .remove(key("weatherPkg", widgetId))
+                .remove(key("wind", widgetId))
                 .remove(key("weatherOpacity", widgetId))
                 .remove(key("notifications", widgetId))
                 .remove(key("notificationsSize", widgetId))

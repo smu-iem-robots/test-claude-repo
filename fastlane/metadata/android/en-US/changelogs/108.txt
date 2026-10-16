@@ -1,0 +1,24 @@
+New:
+* The search answers what you type: sums with %, brackets, √ and sin/cos, unit conversions (mm/in, kg/lb, °C/°F, bar/psi/N/mm², kN, Nm, knots and Beaufort, and more), and steel weights: "plate 2000x1000x20", "pipe 508x20x6000", "round 50", with stainless and aluminium too. Tap an answer to copy it.
+* The search offers to call or text a number, open a link, write an email, start a timer ("timer 10m") or set an alarm ("alarm 7:30").
+* The search finds apps by their initials ("gm" for Google Maps), ignores accents and forgives typos. Typos can be turned off.
+* A coin, dice ("2d6") and a Magic 8-Ball in the search, for the decisions that matter.
+* "Open the only match" opens an app as soon as it is the only one left. Off by default.
+* Pause before opening: mark an app in its long-press menu and it opens only after a short countdown, with how often you opened it or let it go today. 3-30 s, default 5.
+* Uninstall in the long-press menu.
+* Double-tap the wallpaper to lock the screen. Off by default; needs the accessibility service.
+* A line under favorites with their newest notification: who it is from, or who and what it says. Off by default; needs notification access.
+* The clock widget can show the wind after the weather: Beaufort with direction, m/s, km/h, knots or mph.
+* The Private Space row sits at the end of the app list instead of under P (#120).
+
+Fixed:
+* The corner button works again instead of opening the app list (#113).
+* Favorites no longer sit further in from the swipe edge than needed (#106).
+* A swipe that starts at the very edge opens the list again instead of grabbing a favorite (#119).
+* The app list no longer stutters after an app updates, and opening it with a swipe is smoother (#119).
+* Opening a folder near the bottom brings all its apps into view (#114).
+* No extra gap under a search box at the top after sliding along A-Z (#116).
+* Go with an empty search box no longer launches an app.
+* A recently installed app shows once in search results, and opens one menu.
+* Now Playing is drawn once in edit layout when there is no widget.
+* A Private Space app set on the corner button is left out of settings exports.

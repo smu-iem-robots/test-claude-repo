@@ -70,6 +70,13 @@ val EDGE_ZONE_INSET_RANGE = 0..32
 
 /** Enough to be a list of what is new, short of being a second app list. */
 val RECENT_SECTION_RANGE = 3..15
+
+/**
+ * Seconds the pause before a chosen app lasts. Under three it is over before it has been
+ * read; past thirty it stops being a moment to think and becomes the app not opening.
+ */
+val MINDFUL_SECONDS_RANGE = 3..30
+const val DEFAULT_MINDFUL_SECONDS = 5
 enum class AppFont { SYSTEM, SANS_SERIF, SERIF, MONOSPACE, CUSTOM }
 
 /** AUTO picks light or dark text from the wallpaper's own colors. */
@@ -86,6 +93,17 @@ enum class IconShape { SYSTEM, CIRCLE, ROUNDED, SQUARE }
 
 /** When the A-Z strip shows on the home screen itself. */
 enum class AzStripVisibility { NEVER, LANDSCAPE, ALWAYS }
+
+/**
+ * How much of a favorite's newest notification is written under its name.
+ *
+ * A launcher is on screen whenever the phone is unlocked, for whoever is looking at it, which
+ * is why upstream keeps notifications to a count (#63). SENDER says who a notification is from
+ * and nothing it says; FULL adds the message. Only a conversation, an email or a call says who
+ * it is from, so SENDER shows nothing for any other: there the title is the content itself. A
+ * notification its app marks secret gives neither.
+ */
+enum class NotificationPreview { OFF, SENDER, FULL }
 
 private val Context.dataStore by preferencesDataStore(name = "victoria_prefs")
 
@@ -179,7 +197,7 @@ class Prefs(private val context: Context) {
         val SECTION_TOP_PERCENT = intPreferencesKey("section_top_percent")
         val CLOSE_FOLDER_ON_LAUNCH = booleanPreferencesKey("close_folder_on_launch")
         val SHOW_SETTINGS_ROW = booleanPreferencesKey("show_settings_row")
-        val CORNER_BUTTON_KEY = stringPreferencesKey("corner_button_key")
+        val CORNER_BUTTON_KEY = stringPreferencesKey(PREF_CORNER_BUTTON)
         val AUTO_KEYBOARD = booleanPreferencesKey("auto_keyboard")
         val LAST_LETTER_TO_LINE = booleanPreferencesKey("last_letter_to_line")
         val FAVORITES_EVER_SET = booleanPreferencesKey("favorites_ever_set")
@@ -187,6 +205,10 @@ class Prefs(private val context: Context) {
         val HOLD_SCROLL = booleanPreferencesKey("hold_scroll")
         val WEB_SEARCH_FALLBACK = booleanPreferencesKey("web_search_fallback")
         val SWIPE_UP_OPENS_SEARCH = booleanPreferencesKey("swipe_up_opens_search")
+        val SEARCH_ANSWERS = booleanPreferencesKey("search_answers")
+        val SEARCH_ACTIONS = booleanPreferencesKey("search_actions")
+        val SEARCH_FORGIVE_TYPOS = booleanPreferencesKey("search_forgive_typos")
+        val SEARCH_OPEN_ONLY_MATCH = booleanPreferencesKey("search_open_only_match")
         val HOLD_SCROLL_SPEED = intPreferencesKey("hold_scroll_speed")
         val ALIGNMENT = stringPreferencesKey("alignment")
         val APPLIST_ALIGNMENT = stringPreferencesKey("applist_alignment")
@@ -194,6 +216,11 @@ class Prefs(private val context: Context) {
         val STATUS_BAR_PEEK_SECONDS = intPreferencesKey("status_bar_peek_seconds")
         val AZ_BAND_TOP_FRACTION = floatPreferencesKey("az_band_top_fraction")
         val AZ_BAND_HEIGHT_FRACTION = floatPreferencesKey("az_band_height_fraction")
+        val MINDFUL_APPS = stringSetPreferencesKey(PREF_MINDFUL_APPS)
+        val MINDFUL_TALLY = stringPreferencesKey(PREF_MINDFUL_TALLY)
+        val MINDFUL_SECONDS = intPreferencesKey("mindful_seconds")
+        val DOUBLE_TAP_HOME_LOCK = booleanPreferencesKey("double_tap_home_lock")
+        val NOTIFICATION_PREVIEW = stringPreferencesKey("notification_preview")
     }
 
     /** Every padding a user can set by hand; their presence is what retires the first-run layout. */
@@ -451,6 +478,29 @@ class Prefs(private val context: Context) {
     val doubleTapToLock: Flow<Boolean> =
         data.map { it[Keys.DOUBLE_TAP_TO_LOCK] ?: false }.distinctUntilChanged()
 
+    /**
+     * Whether a double tap on bare wallpaper locks the screen, as one on the strip can. Off by
+     * default: the wallpaper has answered only a long press until now, and the lock needs the
+     * accessibility service, which nobody should find a home screen gesture relying on unasked.
+     */
+    val doubleTapHomeLock: Flow<Boolean> =
+        data.map { it[Keys.DOUBLE_TAP_HOME_LOCK] ?: false }.distinctUntilChanged()
+
+    /**
+     * Apps that wait behind a short pause before they open from here. Empty until someone marks
+     * one from its long-press menu, so nobody's launches change on their own.
+     */
+    val mindfulApps: Flow<Set<String>> =
+        data.map { it[Keys.MINDFUL_APPS] ?: emptySet() }.distinctUntilChanged()
+
+    /** Per app key, today's opens and let-gos behind the pause; see [MindfulTally]. */
+    val mindfulTally: Flow<Map<String, String>> =
+        data.map { pref -> jsonToMap(pref[Keys.MINDFUL_TALLY]) }.distinctUntilChanged()
+
+    val mindfulSeconds: Flow<Int> =
+        data.map { (it[Keys.MINDFUL_SECONDS] ?: DEFAULT_MINDFUL_SECONDS).coerceIn(MINDFUL_SECONDS_RANGE) }
+            .distinctUntilChanged()
+
     val edgeSide: Flow<EdgeSide> = data.map {
         runCatching { EdgeSide.valueOf(it[Keys.EDGE_SIDE] ?: EdgeSide.RIGHT.name) }.getOrDefault(EdgeSide.RIGHT)
     }.distinctUntilChanged()
@@ -600,6 +650,15 @@ class Prefs(private val context: Context) {
     val notificationBadges: Flow<Boolean> =
         data.map { it[Keys.NOTIFICATION_BADGES] ?: false }.distinctUntilChanged()
 
+    /**
+     * What the line under a favorite says about its newest notification. OFF by default: it puts
+     * what arrives on a screen anyone may be looking at, which nobody should find done unasked.
+     */
+    val notificationPreview: Flow<NotificationPreview> = data.map { pref ->
+        pref[Keys.NOTIFICATION_PREVIEW]?.let { runCatching { NotificationPreview.valueOf(it) }.getOrNull() }
+            ?: NotificationPreview.OFF
+    }.distinctUntilChanged()
+
     /** How far down the screen a scrubbed letter is parked, as a percentage of the viewport. */
     val sectionTopPercent: Flow<Int> =
         data.map { (it[Keys.SECTION_TOP_PERCENT] ?: 26).coerceIn(SECTION_TOP_RANGE) }
@@ -625,8 +684,9 @@ class Prefs(private val context: Context) {
     /**
      * Whether the letters at the end of the list reach the same line as the rest.
      *
-     * Off by default because the room they need is real: a screen's worth of empty space under
-     * the last app, which is there whenever the list is open rather than only when it is used.
+     * On by default. The room they need is real, empty space under the last app while one of
+     * them is placed, but it takes nothing else away, so an install that never chose is better
+     * off with it.
      */
     val lastLetterToLine: Flow<Boolean> =
         data.map { it[Keys.LAST_LETTER_TO_LINE] ?: true }.distinctUntilChanged()
@@ -663,6 +723,37 @@ class Prefs(private val context: Context) {
     /** Whether swiping up puts the cursor in the search box rather than only opening the list. */
     val swipeUpOpensSearch: Flow<Boolean> =
         data.map { it[Keys.SWIPE_UP_OPENS_SEARCH] ?: false }.distinctUntilChanged()
+
+    /**
+     * Whether the search box works out sums, conversions, steel weights and the odd coin flip
+     * from what is typed.
+     *
+     * On by default, because it is only ever seen by someone who has turned the search bar on,
+     * and it adds to the results without changing which apps they hold or in what order.
+     */
+    val searchAnswers: Flow<Boolean> =
+        data.map { it[Keys.SEARCH_ANSWERS] ?: true }.distinctUntilChanged()
+
+    /**
+     * Whether a phone number, link, address, timer or alarm typed into the search offers to be
+     * handed to the app for it. On by default for the same reason as [searchAnswers]: nothing
+     * starts until it is tapped or Go is pressed with no app to open.
+     */
+    val searchActions: Flow<Boolean> =
+        data.map { it[Keys.SEARCH_ACTIONS] ?: true }.distinctUntilChanged()
+
+    /** Whether a query that matches nothing shows the apps a slip or two away from it. */
+    val searchForgiveTypos: Flow<Boolean> =
+        data.map { it[Keys.SEARCH_FORGIVE_TYPOS] ?: true }.distinctUntilChanged()
+
+    /**
+     * Whether an app opens by itself once a query matches it and nothing else.
+     *
+     * Off by default. It is quick once it is expected and a surprise until then, and an app
+     * opening while you are still typing is not something to find out about by accident.
+     */
+    val searchOpenOnlyMatch: Flow<Boolean> =
+        data.map { it[Keys.SEARCH_OPEN_ONLY_MATCH] ?: false }.distinctUntilChanged()
 
     /**
      * Whether the private space's apps get a section of their own below the alphabet.
@@ -844,7 +935,7 @@ class Prefs(private val context: Context) {
      * only clutter nothing can reach, and it would be restored onto a new phone by the settings
      * backup as well.
      *
-     * One transaction rather than seven, so a row cannot end up half forgotten.
+     * One transaction rather than one per store, so a row cannot end up half forgotten.
      */
     suspend fun forgetEntry(componentKey: String) {
         context.dataStore.edit { pref ->
@@ -865,8 +956,17 @@ class Prefs(private val context: Context) {
             val hidden = pref[Keys.HIDDEN_APPS] ?: emptySet()
             if (componentKey in hidden) pref[Keys.HIDDEN_APPS] = hidden - componentKey
 
+            val excluded = pref[Keys.FREQUENT_EXCLUDED] ?: emptySet()
+            if (componentKey in excluded) pref[Keys.FREQUENT_EXCLUDED] = excluded - componentKey
+
             val counts = jsonToMap(pref[Keys.LAUNCH_COUNTS])
             if (componentKey in counts) pref[Keys.LAUNCH_COUNTS] = mapToJson(counts - componentKey)
+
+            val mindful = pref[Keys.MINDFUL_APPS] ?: emptySet()
+            if (componentKey in mindful) pref[Keys.MINDFUL_APPS] = mindful - componentKey
+
+            val tally = jsonToMap(pref[Keys.MINDFUL_TALLY])
+            if (componentKey in tally) pref[Keys.MINDFUL_TALLY] = mapToJson(tally - componentKey)
 
             // A quick-launch slot that still points at this key would otherwise swipe to
             // nothing once the row is gone for good.
@@ -1054,6 +1154,37 @@ class Prefs(private val context: Context) {
         context.dataStore.edit { it[Keys.DOUBLE_TAP_TO_LOCK] = v }
     }
 
+    suspend fun setDoubleTapHomeLock(v: Boolean) {
+        context.dataStore.edit { it[Keys.DOUBLE_TAP_HOME_LOCK] = v }
+    }
+
+    /**
+     * Marks an app to pause before it opens, or stops it. Stopping drops the app's tally as
+     * well: it only ever describes today, and nothing reads it once the pause is gone.
+     */
+    suspend fun setMindful(componentKey: String, mindful: Boolean) {
+        context.dataStore.edit { pref ->
+            val current = pref[Keys.MINDFUL_APPS] ?: emptySet()
+            pref[Keys.MINDFUL_APPS] = if (mindful) current + componentKey else current - componentKey
+            if (!mindful) {
+                val tally = jsonToMap(pref[Keys.MINDFUL_TALLY])
+                if (componentKey in tally) pref[Keys.MINDFUL_TALLY] = mapToJson(tally - componentKey)
+            }
+        }
+    }
+
+    /** Counts one pause that ended, on the caller's local [epochDay]. */
+    suspend fun recordMindful(componentKey: String, epochDay: Long, opened: Boolean) {
+        context.dataStore.edit { pref ->
+            val tally = MindfulTally.recordInto(jsonToMap(pref[Keys.MINDFUL_TALLY]), componentKey, epochDay, opened)
+            pref[Keys.MINDFUL_TALLY] = mapToJson(tally)
+        }
+    }
+
+    suspend fun setMindfulSeconds(v: Int) {
+        context.dataStore.edit { it[Keys.MINDFUL_SECONDS] = v.coerceIn(MINDFUL_SECONDS_RANGE) }
+    }
+
     suspend fun setHapticsEnabled(v: Boolean) {
         context.dataStore.edit { it[Keys.HAPTICS_ENABLED] = v }
     }
@@ -1189,6 +1320,10 @@ class Prefs(private val context: Context) {
         context.dataStore.edit { it[Keys.NOTIFICATION_BADGES] = v }
     }
 
+    suspend fun setNotificationPreview(v: NotificationPreview) {
+        context.dataStore.edit { it[Keys.NOTIFICATION_PREVIEW] = v.name }
+    }
+
     suspend fun setSectionTopPercent(v: Int) {
         context.dataStore.edit { it[Keys.SECTION_TOP_PERCENT] = v.coerceIn(SECTION_TOP_RANGE) }
     }
@@ -1214,6 +1349,22 @@ class Prefs(private val context: Context) {
 
     suspend fun setSwipeUpOpensSearch(v: Boolean) {
         context.dataStore.edit { it[Keys.SWIPE_UP_OPENS_SEARCH] = v }
+    }
+
+    suspend fun setSearchAnswers(v: Boolean) {
+        context.dataStore.edit { it[Keys.SEARCH_ANSWERS] = v }
+    }
+
+    suspend fun setSearchActions(v: Boolean) {
+        context.dataStore.edit { it[Keys.SEARCH_ACTIONS] = v }
+    }
+
+    suspend fun setSearchForgiveTypos(v: Boolean) {
+        context.dataStore.edit { it[Keys.SEARCH_FORGIVE_TYPOS] = v }
+    }
+
+    suspend fun setSearchOpenOnlyMatch(v: Boolean) {
+        context.dataStore.edit { it[Keys.SEARCH_OPEN_ONLY_MATCH] = v }
     }
 
     /**

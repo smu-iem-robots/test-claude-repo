@@ -3,6 +3,7 @@ package dev.victorialauncher.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -37,7 +38,8 @@ class PrefsForgetTest {
     @After
     fun tearDown() = runBlocking {
         // forgetEntry wipes everything this test could have left behind under each key,
-        // including the quick-launch slots, so it doubles as the cleanup.
+        // including the quick-launch slots and the most-used exclusions, so it doubles as the
+        // cleanup.
         prefs.forgetEntry(keyA)
         prefs.forgetEntry(keyB)
         prefs.forgetEntry(keyOther)
@@ -75,6 +77,35 @@ class PrefsForgetTest {
 
         assertNull("a swipe must not still point at a row that is gone for good", prefs.quickLaunchLeft.first())
         assertNull(prefs.quickLaunchRight.first())
+    }
+
+    @Test
+    fun forgettingAnEntryClearsItsPauseAndItsTally() = runBlocking {
+        // Today, because recording drops every other app's entry from an earlier day, and a
+        // fixed day would wipe whatever this device had counted today.
+        val today = LocalDate.now().toEpochDay()
+        prefs.setMindful(keyB, true)
+        prefs.recordMindful(keyB, today, opened = false)
+        prefs.setMindful(keyOther, true)
+
+        prefs.forgetEntry(keyB)
+
+        assertFalse("a row gone for good must not stay marked to pause", keyB in prefs.mindfulApps.first())
+        assertNull("nor keep a tally nothing can show", prefs.mindfulTally.first()[keyB])
+        assertTrue("another app's mark is not this row's to forget", keyOther in prefs.mindfulApps.first())
+        prefs.setMindful(keyOther, false)
+    }
+
+    @Test
+    fun forgettingAnEntryTakesItOffTheMostUsedExclusions() = runBlocking {
+        prefs.setFrequentExcluded(keyB, true)
+        prefs.setFrequentExcluded(keyOther, true)
+
+        prefs.forgetEntry(keyB)
+
+        assertFalse("a row gone for good must not stay excluded", keyB in prefs.frequentExcluded.first())
+        assertTrue("an unrelated exclusion must survive", keyOther in prefs.frequentExcluded.first())
+        prefs.setFrequentExcluded(keyOther, false)
     }
 
     @Test

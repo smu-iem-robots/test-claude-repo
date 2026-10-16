@@ -27,6 +27,9 @@ internal const val PREF_ICON_OVERRIDES = "icon_overrides_json"
 internal const val PREF_LAUNCH_COUNTS = "launch_counts_json"
 internal const val PREF_QUICK_LAUNCH_LEFT = "quick_launch_left_key"
 internal const val PREF_QUICK_LAUNCH_RIGHT = "quick_launch_right_key"
+internal const val PREF_CORNER_BUTTON = "corner_button_key"
+internal const val PREF_MINDFUL_APPS = "mindful_apps"
+internal const val PREF_MINDFUL_TALLY = "mindful_tally_json"
 
 /**
  * Strips every second profile's keys out of one stored preference's value, given the DataStore
@@ -45,11 +48,11 @@ internal const val PREF_QUICK_LAUNCH_RIGHT = "quick_launch_right_key"
  * profile is which before it can be safe.
  *
  * Returns the value to export, or null when the whole entry should be dropped rather than kept
- * empty — a quick-launch slot pointed at a private app has nothing left to point at once that
- * app is gone from the backup. Every other shape stays present even when everything is stripped
- * out of it: an all-private favorites list exports as an empty one, and a folder every one of
- * whose members was private stays a folder, just an empty one, because the folder itself (its
- * name, its icon) is the user's, not a secret.
+ * empty — a quick-launch slot or the corner button pointed at a private app has nothing left
+ * to point at once that app is gone from the backup. Every other shape stays present even when
+ * everything is stripped out of it: an all-private favorites list exports as an empty one, and a
+ * folder every one of whose members was private stays a folder, just an empty one, because the
+ * folder itself (its name, its icon) is the user's, not a secret.
  *
  * A preference name this doesn't recognize, and a value with no second profile's key in it,
  * comes back as exactly the object it was handed — never a rebuilt copy — so an export from a
@@ -63,12 +66,12 @@ fun stripPrivateSpaceFromExport(name: String, value: Any, stripOtherProfiles: Bo
 
     return when (name) {
         PREF_FAVORITES -> (value as? String)?.let { stripNewlineList(it, isPrivate) } ?: value
-        PREF_HIDDEN_APPS, PREF_FREQUENT_EXCLUDED ->
+        PREF_HIDDEN_APPS, PREF_FREQUENT_EXCLUDED, PREF_MINDFUL_APPS ->
             (value as? Set<*>)?.let { stripStringSet(it, isPrivate) } ?: value
         PREF_FOLDERS -> (value as? String)?.let { stripFoldersJson(it, isPrivate) } ?: value
-        PREF_NAME_OVERRIDES, PREF_ICON_OVERRIDES, PREF_LAUNCH_COUNTS ->
+        PREF_NAME_OVERRIDES, PREF_ICON_OVERRIDES, PREF_LAUNCH_COUNTS, PREF_MINDFUL_TALLY ->
             (value as? String)?.let { stripJsonMap(it, isPrivate) } ?: value
-        PREF_QUICK_LAUNCH_LEFT, PREF_QUICK_LAUNCH_RIGHT -> {
+        PREF_QUICK_LAUNCH_LEFT, PREF_QUICK_LAUNCH_RIGHT, PREF_CORNER_BUTTON -> {
             // Not `?.let { ... } ?: value`: that Elvis would mistake the deliberate null this
             // branch can return (drop the slot) for the cast having failed, and hand the
             // private key straight back out.
@@ -119,8 +122,9 @@ private fun stripFoldersJson(raw: String, isPrivate: (String) -> Boolean): Strin
 }
 
 /**
- * Name overrides, icon overrides and launch counts are all a JSON object keyed by app key; this
- * drops the entries whose key belongs to a second profile.
+ * Name overrides, icon overrides, launch counts and the pause tally are all a JSON object keyed
+ * by app key; this drops the entries whose key belongs to a second profile. The tally says how
+ * often an app was opened today, which names a private app as surely as a launch count does.
  */
 private fun stripJsonMap(raw: String, isPrivate: (String) -> Boolean): String {
     val obj = runCatching { JSONObject(raw) }.getOrNull() ?: return raw

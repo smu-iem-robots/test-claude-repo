@@ -126,16 +126,15 @@ class ClockWidgetProvider : AppWidgetProvider() {
                     setViewVisibility(R.id.widget_weather, View.GONE)
                 } else {
                     setViewVisibility(R.id.widget_weather, View.VISIBLE)
-                    setTextViewText(
-                        R.id.widget_weather,
-                        ClockWidgetWeather.formatted(weather, config.weatherFahrenheit),
-                    )
+                    setTextViewText(R.id.widget_weather, ClockWidgetWeather.line(context, weather, config))
                     setTextViewTextSize(R.id.widget_weather, TypedValue.COMPLEX_UNIT_SP, config.weatherSizeSp.toFloat())
                     setTextColor(R.id.widget_weather, config.colorAt(config.weatherOpacity))
                 }
 
                 // A count and nothing else, for the same reason the badges carry no text: what
-                // a notification says is its own business and not the home screen's.
+                // a notification says is its own business and not the home screen's. The opt-in
+                // line under a favorite is the one exception, and it stays out of here: a widget
+                // is redrawn only when something asks, so text put here would outlive its message.
                 val notifications = if (config.showNotifications) {
                     NotificationCountBus.counts.value.values.sum().takeIf { it > 0 }
                 } else {

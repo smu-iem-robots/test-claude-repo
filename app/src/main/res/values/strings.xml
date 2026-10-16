@@ -90,7 +90,7 @@
     <string name="settings_list_headers">Letter headings</string>
     <string name="settings_list_headers_detail">Off gives one continuous list. The A-Z strip still jumps to the letter</string>
     <string name="settings_notification_badges">Notification count on icons</string>
-    <string name="settings_notification_badges_detail">Needs the same notification access Now Playing does. Counts only, never what a notification says</string>
+    <string name="settings_notification_badges_detail">Needs the same notification access Now Playing does. The badge is a count only, never what a notification says</string>
     <string name="settings_section_top">Where a letter lands</string>
     <string name="settings_close_folder">Close a folder after opening an app</string>
     <string name="settings_close_folder_detail">Off leaves it open until you close it yourself</string>

@@ -81,6 +81,7 @@ import androidx.compose.material3.LocalTextStyle
 import dev.victorialauncher.ui.theme.launcherTextShadow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
@@ -108,11 +109,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.victorialauncher.VictoriaApp
 import dev.victorialauncher.data.AppInfo
 import dev.victorialauncher.data.EdgeSide
 import dev.victorialauncher.data.ShortcutSwipe
@@ -124,6 +127,9 @@ import dev.victorialauncher.data.IconSide
 import dev.victorialauncher.data.HomePaddings
 import dev.victorialauncher.data.folderToken
 import dev.victorialauncher.data.PaddingSlot
+import dev.victorialauncher.data.NotificationPreview
+import dev.victorialauncher.media.NotificationPreviewBus
+import dev.victorialauncher.media.NotificationSnippets
 import dev.victorialauncher.media.NowPlayingWidget
 import dev.victorialauncher.media.openNowPlayingApp
 import dev.victorialauncher.service.HapticUtil
@@ -298,6 +304,11 @@ fun HomeScreen(
         val base = nameOverrides[app.key] ?: app.label
         return if (markWorkApps && app.work) base + workSuffix else base
     }
+    // Read here once for every favorite, not by each row: a DataStore collection per row is what
+    // IconConfig exists to avoid. Not threaded down from the nav host, since nothing above the
+    // favorites ever needs it.
+    val notificationPreview by (LocalContext.current.applicationContext as VictoriaApp).prefs
+        .notificationPreview.collectAsState(initial = NotificationPreview.OFF)
 
     var menuForKey by remember { mutableStateOf<String?>(null) }
     var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
@@ -1129,6 +1140,7 @@ fun HomeScreen(
                             sidePaddingDp = sidePaddingDp,
                             contentColor = contentColor,
                             showLabels = showFavoriteLabels,
+                            notificationPreview = notificationPreview,
                             alignment = alignment,
                             iconSide = iconSide,
                             menuExpanded = menuForKey == item.app.key,
@@ -1324,6 +1336,8 @@ private fun FavoriteRow(
     sidePaddingDp: Int,
     contentColor: Color,
     showLabels: Boolean,
+    /** How much of this app's newest notification to write under its name. */
+    notificationPreview: NotificationPreview = NotificationPreview.OFF,
     alignment: HomeAlignment,
     iconSide: IconSide,
     menuExpanded: Boolean,
@@ -1401,16 +1415,39 @@ private fun FavoriteRow(
                 iconWidth = iconSizeDp.dp,
                 icon = { AppIcon(app = app, sizeDp = iconSizeDp) },
             ) { labelModifier ->
-                Text(
-                    label,
-                    // Same dimming a hidden app gets in the A-Z list: a shortcut its
-                    // publisher has switched off is still listed, but tapping it only
-                    // explains why it will not open.
-                    color = if (app.disabled) contentColor.copy(alpha = 0.5f) else contentColor,
-                    fontSize = labelSizeSp.sp,
-                    modifier = labelModifier,
-                    textAlign = alignment.textAlign(),
-                )
+                // Same dimming a hidden app gets in the A-Z list: a shortcut its publisher has
+                // switched off is still listed, but tapping it only explains why it will not open.
+                val nameColor = if (app.disabled) contentColor.copy(alpha = 0.5f) else contentColor
+                // Looked up in here, so a notification coming or going redraws this name and not
+                // the row around it. Never in edit mode, where a line arriving would change the
+                // height of a row that is being dragged.
+                val preview = if (notificationPreview != NotificationPreview.OFF && !editMode) {
+                    notificationPreviewLine(notificationPreview, app)
+                } else {
+                    null
+                }
+                // Part of the name as far as a tap goes: with the compact tap area the row still
+                // hugs what it shows, now one line deeper and as wide as the longer of the two.
+                Column(modifier = labelModifier, horizontalAlignment = alignment.columnAlignment()) {
+                    Text(
+                        label,
+                        color = nameColor,
+                        fontSize = labelSizeSp.sp,
+                        textAlign = alignment.textAlign(),
+                    )
+                    if (preview != null) {
+                        val previewSp = labelSizeSp * PREVIEW_TEXT_SCALE
+                        Text(
+                            preview,
+                            color = nameColor.copy(alpha = nameColor.alpha * PREVIEW_ALPHA),
+                            fontSize = previewSp.sp,
+                            lineHeight = (previewSp * PREVIEW_LINE_HEIGHT).sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = alignment.textAlign(),
+                        )
+                    }
+                }
             }
         }
 
@@ -2031,6 +2068,38 @@ private fun HomeAlignment.arrangement() = when (this) {
     HomeAlignment.LEFT -> Arrangement.Start
     HomeAlignment.CENTER -> Arrangement.Center
     HomeAlignment.RIGHT -> Arrangement.End
+}
+
+/** Where the shorter of a name and its notification line sits against the longer one. */
+private fun HomeAlignment.columnAlignment(): Alignment.Horizontal = when (this) {
+    HomeAlignment.LEFT -> Alignment.Start
+    HomeAlignment.CENTER -> Alignment.CenterHorizontally
+    HomeAlignment.RIGHT -> Alignment.End
+}
+
+/** The notification line against the name above it: smaller, and quieter. */
+private const val PREVIEW_TEXT_SCALE = 0.72f
+private const val PREVIEW_ALPHA = 0.7f
+
+/**
+ * The line's height as a multiple of its own size. The body style it would inherit sets a line
+ * height meant for full-size text, which leaves a small line in a gap as tall as a name. Kept
+ * this tight, a name and its line still fit beside an icon at the default sizes, so a
+ * notification arriving does not push every favorite below it down the screen.
+ */
+private const val PREVIEW_LINE_HEIGHT = 1.3f
+
+/**
+ * What to write under [app]'s name for its newest notification, or null for nothing.
+ *
+ * Looked up by package, as the badges are, so a work or private copy of an app shares its main
+ * copy's line just as it shares its count. Empty, and so nothing, while the listener is not
+ * connected: the bus is cleared when the service goes.
+ */
+@Composable
+private fun notificationPreviewLine(mode: NotificationPreview, app: AppInfo): String? {
+    val previews by NotificationPreviewBus.previews.collectAsState()
+    return NotificationSnippets.line(mode, previews[app.componentName.packageName])
 }
 
 /** Folders get the same treatment as apps: their own name and their own icon. */

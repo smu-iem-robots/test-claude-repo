@@ -12,7 +12,9 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * A count and nothing else. The text of a notification is the notification's business, and a
  * launcher that copied it onto the home screen would be putting whatever arrived in front of
- * whoever happened to be looking at the phone.
+ * whoever happened to be looking at the phone. That is why the badges and the clock widget stay
+ * with the count. The line a favorite can show instead is a setting of its own, off until
+ * someone turns it on, and it is fed by [NotificationPreviewBus], not from here.
  */
 object NotificationCountBus {
     private val _counts = MutableStateFlow<Map<String, Int>>(emptyMap())

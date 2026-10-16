@@ -11,6 +11,7 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import androidx.core.app.NotificationCompat
 import dev.victorialauncher.widget.ClockWidgetProvider
 
 class NowPlayingListenerService : NotificationListenerService() {
@@ -79,6 +80,7 @@ class NowPlayingListenerService : NotificationListenerService() {
         detach()
         NowPlayingBus.update(null)
         NotificationCountBus.clear()
+        NotificationPreviewBus.clear()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) = refresh()
@@ -102,26 +104,73 @@ class NowPlayingListenerService : NotificationListenerService() {
      * Ongoing notifications are left out — a music player or a running download is a state,
      * not something waiting to be read — and so are group summaries, which would count the
      * same messages a second time.
+     *
+     * The preview lines come out of the same pass with the same exclusions, so a favorite is
+     * never given a line about a notification its badge does not count.
      */
     private fun publishCounts() {
         val active = runCatching { activeNotifications }.getOrNull()
         if (active == null) {
             NotificationCountBus.clear()
+            NotificationPreviewBus.clear()
             ClockWidgetProvider.renderAll(this)
             return
         }
         val counts = HashMap<String, Int>()
+        val previews = HashMap<String, NotificationSnippet>()
         active.forEach { sbn ->
             if (!sbn.isClearable) return@forEach
             val notification = sbn.notification ?: return@forEach
             if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return@forEach
             counts[sbn.packageName] = (counts[sbn.packageName] ?: 0) + 1
+            snippetOf(notification, sbn.postTime)?.let { snippet ->
+                NotificationSnippets.keepNewest(previews, sbn.packageName, snippet)
+            }
         }
+        NotificationPreviewBus.update(previews)
         val before = NotificationCountBus.counts.value.values.sum()
         NotificationCountBus.update(counts)
         // A widget is drawn only when something asks. The home screen follows the bus on its
         // own; a RemoteViews cannot, so the total changing is what has to ask for it.
         if (counts.values.sum() != before) ClockWidgetProvider.renderAll(this)
+    }
+
+    /**
+     * What [notification] may say under its favorite; [NotificationSnippets.of] decides which of
+     * its words are read at all. Extras an app filled with something that will not read back
+     * give no line, rather than taking the counts down with them.
+     */
+    private fun snippetOf(notification: Notification, postTime: Long): NotificationSnippet? = runCatching {
+        NotificationSnippets.of(
+            exposure = when (notification.visibility) {
+                Notification.VISIBILITY_PUBLIC -> NotificationExposure.PUBLIC
+                Notification.VISIBILITY_SECRET -> NotificationExposure.SECRET
+                // Private, and anything newer than this knows of: the cautious middle.
+                else -> NotificationExposure.PRIVATE
+            },
+            postTime = postTime,
+            own = { wordsOf(notification) },
+            publicVersion = { notification.publicVersion?.let { wordsOf(it) } },
+        )
+    }.getOrNull()
+
+    /** The words in [notification], read the same way from it as from its public version. */
+    private fun wordsOf(notification: Notification): NotificationWords {
+        val extras = notification.extras
+        // Through androidx: the framework has no public way to read a MessagingStyle back out
+        // of a notification someone else posted.
+        val messaging = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notification)
+        val last = messaging?.messages?.lastOrNull()
+        return NotificationWords(
+            title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+            text = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+            conversationTitle = messaging?.conversationTitle?.toString()
+                ?: extras?.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString(),
+            // A message with no person is the phone's own user replying, which leaves naming
+            // the conversation to the app's own title.
+            lastSender = last?.person?.name?.toString(),
+            lastMessage = last?.text?.toString(),
+        )
     }
 
     /** Follow whichever session is worth showing, and watch it for changes. */

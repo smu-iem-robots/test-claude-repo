@@ -135,7 +135,9 @@ class ClockWidgetProvider : AppWidgetProvider() {
                 }
 
                 // A count and nothing else, for the same reason the badges carry no text: what
-                // a notification says is its own business and not the home screen's.
+                // a notification says is its own business and not the home screen's. The opt-in
+                // line under a favorite is the one exception, and it stays out of here: a widget
+                // is redrawn only when something asks, so text put here would outlive its message.
                 val notifications = if (config.showNotifications) {
                     NotificationCountBus.counts.value.values.sum().takeIf { it > 0 }
                 } else {

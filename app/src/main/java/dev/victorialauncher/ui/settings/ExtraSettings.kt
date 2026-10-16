@@ -19,4 +19,5 @@ import androidx.compose.runtime.Composable
  */
 @Composable
 internal fun extraSettingsEntries(onOpenRoute: (String) -> Unit): List<SettingsEntry> =
-    emptyList<SettingsEntry>() + mindfulSettingsEntries(onOpenRoute)
+    emptyList<SettingsEntry>() + mindfulSettingsEntries(onOpenRoute) +
+        notificationPreviewSettingsEntries(onOpenRoute)

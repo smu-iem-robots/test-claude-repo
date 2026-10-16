@@ -94,6 +94,15 @@ enum class IconShape { SYSTEM, CIRCLE, ROUNDED, SQUARE }
 /** When the A-Z strip shows on the home screen itself. */
 enum class AzStripVisibility { NEVER, LANDSCAPE, ALWAYS }
 
+/**
+ * How much of a favorite's newest notification is written under its name.
+ *
+ * A launcher is on screen whenever the phone is unlocked, for whoever is looking at it, which
+ * is why upstream keeps notifications to a count (#63). SENDER says who a notification is from
+ * and nothing it says; FULL adds the message, as far as its app allows that on a lock screen.
+ */
+enum class NotificationPreview { OFF, SENDER, FULL }
+
 private val Context.dataStore by preferencesDataStore(name = "victoria_prefs")
 
 /** Bumped only if the shape of an exported file changes, so an old one can be refused. */
@@ -205,6 +214,7 @@ class Prefs(private val context: Context) {
         val MINDFUL_TALLY = stringPreferencesKey(PREF_MINDFUL_TALLY)
         val MINDFUL_SECONDS = intPreferencesKey("mindful_seconds")
         val DOUBLE_TAP_HOME_LOCK = booleanPreferencesKey("double_tap_home_lock")
+        val NOTIFICATION_PREVIEW = stringPreferencesKey("notification_preview")
     }
 
     /** Every padding a user can set by hand; their presence is what retires the first-run layout. */
@@ -633,6 +643,15 @@ class Prefs(private val context: Context) {
 
     val notificationBadges: Flow<Boolean> =
         data.map { it[Keys.NOTIFICATION_BADGES] ?: false }.distinctUntilChanged()
+
+    /**
+     * What the line under a favorite says about its newest notification. OFF by default: it puts
+     * what arrives on a screen anyone may be looking at, which nobody should find done unasked.
+     */
+    val notificationPreview: Flow<NotificationPreview> = data.map { pref ->
+        pref[Keys.NOTIFICATION_PREVIEW]?.let { runCatching { NotificationPreview.valueOf(it) }.getOrNull() }
+            ?: NotificationPreview.OFF
+    }.distinctUntilChanged()
 
     /** How far down the screen a scrubbed letter is parked, as a percentage of the viewport. */
     val sectionTopPercent: Flow<Int> =
@@ -1258,6 +1277,10 @@ class Prefs(private val context: Context) {
 
     suspend fun setNotificationBadges(v: Boolean) {
         context.dataStore.edit { it[Keys.NOTIFICATION_BADGES] = v }
+    }
+
+    suspend fun setNotificationPreview(v: NotificationPreview) {
+        context.dataStore.edit { it[Keys.NOTIFICATION_PREVIEW] = v.name }
     }
 
     suspend fun setSectionTopPercent(v: Int) {

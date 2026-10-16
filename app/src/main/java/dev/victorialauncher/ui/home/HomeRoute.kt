@@ -975,7 +975,8 @@ fun HomeRoute(
                 listState = appListState,
                 // Distance still to travel, which is exactly what the collapse transform
                 // takes: the list arrives scaled down and faded, and grows into place.
-                enterPullPx = openDistancePx - openAnim.value,
+                // Handed over unread, so only the list's draw follows the animation.
+                enterPullPx = { openDistancePx - openAnim.value },
                 query = appListQuery,
                 onQueryChange = { appListQuery = it },
                 alignment = settings.appListAlignment,
@@ -984,6 +985,9 @@ fun HomeRoute(
                 onUninstall = { app.appRepository.uninstall(it) },
                 mindfulApps = mindfulApps,
                 onSetMindful = { appInfo, pause -> scope.launch { app.prefs.setMindful(appInfo.key, pause) } },
+                // Left to go once the app it went to is in front, as after a launch, so the home
+                // screen does not flash up in between.
+                onActionStarted = { closeAfterLaunch() },
             )
         }
 

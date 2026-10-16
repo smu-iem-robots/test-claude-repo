@@ -52,6 +52,15 @@ object EntryKeys {
 
     fun isShortcut(key: String): Boolean = key.startsWith(SHORTCUT_PREFIX)
 
+    /**
+     * Whether [key] names one of [packageName]'s activities or a shortcut it published, in any
+     * profile. Also true of anything built by appending to such a key, which is how the icon
+     * cache names its bitmaps. The slash is what keeps `com.a` from also claiming `com.ab`: a
+     * package name cannot contain one, so it always ends the package part.
+     */
+    fun belongsToPackage(key: String, packageName: String): Boolean =
+        key.startsWith("$packageName/") || key.startsWith("$SHORTCUT_PREFIX$packageName/")
+
     fun isSearch(key: String): Boolean = key == SEARCH
 
     fun isPrivateSpace(key: String): Boolean = key == PRIVATE_SPACE

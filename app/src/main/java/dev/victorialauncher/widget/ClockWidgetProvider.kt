@@ -126,10 +126,7 @@ class ClockWidgetProvider : AppWidgetProvider() {
                     setViewVisibility(R.id.widget_weather, View.GONE)
                 } else {
                     setViewVisibility(R.id.widget_weather, View.VISIBLE)
-                    setTextViewText(
-                        R.id.widget_weather,
-                        ClockWidgetWeather.formatted(weather, config.weatherFahrenheit),
-                    )
+                    setTextViewText(R.id.widget_weather, ClockWidgetWeather.line(context, weather, config))
                     setTextViewTextSize(R.id.widget_weather, TypedValue.COMPLEX_UNIT_SP, config.weatherSizeSp.toFloat())
                     setTextColor(R.id.widget_weather, config.colorAt(config.weatherOpacity))
                 }

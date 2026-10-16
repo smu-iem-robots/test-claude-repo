@@ -740,8 +740,11 @@ fun HomeRoute(
                 onOpenNowPlaying = {
                     // The card is one more way into the player, so a player marked to pause
                     // pauses here as it does from its own row. Its main-profile row only: the
-                    // listener hears this profile's sessions and no other's.
+                    // listener hears this profile's sessions and no other's. Not in edit
+                    // layout, which never pauses, so the card opens what is playing there as
+                    // it always has rather than the player's front screen.
                     val playing = NowPlayingBus.state.value?.controller?.packageName
+                        ?.takeIf { !homeEditMode && !bandEditMode }
                     val marked = playing?.let { pkg ->
                         appsByKey.values.firstOrNull {
                             it.kind == EntryKind.APP && it.packageName == pkg &&

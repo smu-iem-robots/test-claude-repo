@@ -1314,8 +1314,11 @@ fun AppListScreen(
                         // happening, so the end of the alphabet arrived with a lurch while the
                         // start slid. Steady room costs a screen of empty space under the last
                         // app, which is the whole of what this setting is agreeing to.
+                        //
+                        // With a field pinned above the list the line sits that field's height
+                        // below sectionTopPx on the screen, so that much less is left under it.
                         lastLetterToLine && bottomRoomLive ->
-                            (viewportHeightPx - sectionTopPx).coerceAtLeast(0).toDp()
+                            (viewportHeightPx - pinnedAbovePx - sectionTopPx).coerceAtLeast(0).toDp()
                         else -> restingBottomPadding
                     },
                 )

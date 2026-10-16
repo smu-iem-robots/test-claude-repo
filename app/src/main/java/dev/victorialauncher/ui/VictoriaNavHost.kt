@@ -156,8 +156,8 @@ fun VictoriaNavHost(
      * Takes a state that has just been resolved and acts on what it conceals at once, on the
      * list already in hand, before the reload that will take a moment.
      *
-     * The reload is a full enumeration: every profile, every activity, an icon cache thrown
-     * away and rebuilt. That is long enough to read the names off a home screen, and a lock
+     * The reload is a full enumeration: every profile, every activity, and icons drawn again
+     * for whatever changed. That is long enough to read the names off a home screen, and a lock
      * that only takes effect at the end of it has left them there for exactly that long.
      *
      * Publishes nothing once [pass] has been superseded, for the same reason the reload does

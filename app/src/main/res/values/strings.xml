@@ -126,7 +126,7 @@
     <string name="settings_show_alphabet">Show A-Z in app list</string>
     <string name="applist_search_web">Search the web for \"%1$s\"</string>
     <string name="settings_web_search">Offer a web search</string>
-    <string name="settings_web_search_detail">When nothing in the list matches what you typed, a row offers the words to your browser. Nothing is sent anywhere unless you tap it</string>
+    <string name="settings_web_search_detail">When nothing in the list matches what you typed, a row offers the words to your browser. Nothing is sent anywhere unless you tap it or press Go on the keyboard</string>
     <string name="settings_swipe_up_search">Swipe up opens the search</string>
     <string name="settings_swipe_up_search_detail">Swiping up opens the app list with the cursor already in the search box</string>
     <string name="app_work_suffix"> (Work)</string>

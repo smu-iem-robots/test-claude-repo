@@ -8,9 +8,10 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * What a notification may put under a favorite. The home screen is shown to whoever holds the
- * phone, so a notification's own lock screen rules decide what it gives up here, and anything
- * it keeps back must not even be read.
+ * What a notification may put under a favorite. The home screen is shown only on an unlocked
+ * phone, so a notification gives up what the unlocked shade would show — except one its app
+ * marks secret, which gives nothing and must not even be read — and only as much of it as the
+ * chosen line will show.
  */
 class NotificationSnippetsTest {
 
@@ -19,10 +20,9 @@ class NotificationSnippetsTest {
     private fun snippet(
         exposure: NotificationExposure,
         own: NotificationWords = message,
-        publicVersion: NotificationWords? = null,
         postTime: Long = 10L,
         mode: NotificationPreview = NotificationPreview.FULL,
-    ) = NotificationSnippets.of(mode, exposure, postTime, { own }, { publicVersion })
+    ) = NotificationSnippets.of(mode, exposure, postTime, { own })
 
     @Test
     fun `a public notification gives its title and text`() {
@@ -37,7 +37,6 @@ class NotificationSnippetsTest {
             NotificationExposure.PUBLIC,
             10L,
             { read = true; message },
-            { read = true; null },
         )
         assertNull(result)
         assertFalse(read)
@@ -75,40 +74,28 @@ class NotificationSnippetsTest {
             NotificationExposure.SECRET,
             10L,
             { read = true; message },
-            { read = true; null },
         )
         assertNull(result)
         assertFalse(read)
     }
 
     @Test
-    fun `a private notification gives its public version and its own words go unread`() {
-        var ownRead = false
-        val result = NotificationSnippets.of(
-            NotificationPreview.FULL,
-            NotificationExposure.PRIVATE,
-            10L,
-            { ownRead = true; message },
-            { NotificationWords(title = "Messages", text = "1 new message") },
-        )
-        assertEquals(NotificationSnippet("Messages", "1 new message", 10L), result)
-        assertFalse(ownRead)
+    fun `a private notification is shown as the unlocked shade shows it`() {
+        assertEquals(NotificationSnippet("Ana", "Lunch at one?", 10L), snippet(NotificationExposure.PRIVATE))
     }
 
     @Test
-    fun `a private notification without a public version keeps its title and drops its text`() {
-        assertEquals(NotificationSnippet("Ana", "", 10L), snippet(NotificationExposure.PRIVATE))
-    }
-
-    @Test
-    fun `a private conversation without a public version drops its last message too`() {
+    fun `a private conversation says its last message under full`() {
         val chat = NotificationWords(title = "Ana", text = "Lunch?", lastSender = "Ana", lastMessage = "Lunch?")
-        assertEquals(NotificationSnippet("Ana", "", 10L), snippet(NotificationExposure.PRIVATE, own = chat))
+        assertEquals(NotificationSnippet("Ana", "Lunch?", 10L), snippet(NotificationExposure.PRIVATE, own = chat))
     }
 
     @Test
-    fun `a public version with nothing in it gives nothing rather than the private words`() {
-        assertNull(snippet(NotificationExposure.PRIVATE, publicVersion = NotificationWords()))
+    fun `sender keeps only who a private notification is from`() {
+        assertEquals(
+            NotificationSnippet("Ana", "", 10L),
+            snippet(NotificationExposure.PRIVATE, mode = NotificationPreview.SENDER),
+        )
     }
 
     @Test

@@ -53,25 +53,24 @@ internal object NotificationSnippets {
      * is not held either, so someone who did not ask for the line, or asked only who wrote,
      * has none of what their notifications say kept by the launcher.
      *
-     * A notification follows its own lock screen rules here, because the home screen is shown
-     * to whoever holds the phone just as the lock screen is. A secret one gives nothing, and
-     * [own] is not even read. A private one gives its public version when it has one, and
-     * [own] again goes unread. Without one it keeps its title and drops its text: private is
-     * what every app gets that never says otherwise, so dropping the title as well would
-     * leave almost every favorite with no line at all, even under SENDER.
+     * A secret notification gives nothing, and [own] is not even read: its app has said it must
+     * not be seen without unlocking, and an app that bothers to say so — a bank, a one-time
+     * code — means it. A private one is shown as the shade shows it once the phone is unlocked,
+     * which is the only time the home screen is in front of anyone. Holding it to the lock
+     * screen's rule instead would have emptied FULL for nearly everything, since private is
+     * what every app gets that never says otherwise, and a public version is mostly "1 new
+     * message", which says nothing the badge did not.
      */
     fun of(
         mode: NotificationPreview,
         exposure: NotificationExposure,
         postTime: Long,
         own: () -> NotificationWords,
-        publicVersion: () -> NotificationWords?,
     ): NotificationSnippet? {
         if (mode == NotificationPreview.OFF) return null
         val words = when (exposure) {
             NotificationExposure.SECRET -> return null
-            NotificationExposure.PUBLIC -> own()
-            NotificationExposure.PRIVATE -> publicVersion() ?: own().copy(text = null, lastMessage = null)
+            NotificationExposure.PUBLIC, NotificationExposure.PRIVATE -> own()
         }
         // A conversation is named for the group it is in, else for whoever wrote last; the
         // app's own title is often a summary such as "3 new messages" instead.

@@ -193,16 +193,15 @@ class NowPlayingListenerService : NotificationListenerService() {
             exposure = when (notification.visibility) {
                 Notification.VISIBILITY_PUBLIC -> NotificationExposure.PUBLIC
                 Notification.VISIBILITY_SECRET -> NotificationExposure.SECRET
-                // Private, and anything newer than this knows of: the cautious middle.
+                // Private, and anything newer than this knows of.
                 else -> NotificationExposure.PRIVATE
             },
             postTime = postTime,
             own = { wordsOf(notification) },
-            publicVersion = { notification.publicVersion?.let { wordsOf(it) } },
         )
     }.getOrNull()
 
-    /** The words in [notification], read the same way from it as from its public version. */
+    /** The words in [notification], with a conversation's last message read out of its style. */
     private fun wordsOf(notification: Notification): NotificationWords {
         val extras = notification.extras
         // Through androidx: the framework has no public way to read a MessagingStyle back out

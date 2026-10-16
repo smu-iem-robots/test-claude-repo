@@ -2,7 +2,7 @@
 <resources>
     <!-- A line under a favorite saying what its newest notification is (#121) -->
     <string name="settings_notification_preview">Notification line under favorites</string>
-    <string name="settings_notification_preview_detail">Needs notification access. Sender shows who a notification is from; Full also shows the message, where its app allows that on a lock screen</string>
+    <string name="settings_notification_preview_detail">Needs notification access. Sender shows who a notification is from; Full also shows the message. Apps that mark a notification secret show nothing</string>
     <string name="settings_notification_preview_access_detail">Needed for the notification line under favorites</string>
     <string name="notification_preview_off">Off</string>
     <string name="notification_preview_sender">Sender</string>

@@ -99,7 +99,8 @@ enum class AzStripVisibility { NEVER, LANDSCAPE, ALWAYS }
  *
  * A launcher is on screen whenever the phone is unlocked, for whoever is looking at it, which
  * is why upstream keeps notifications to a count (#63). SENDER says who a notification is from
- * and nothing it says; FULL adds the message, as far as its app allows that on a lock screen.
+ * and nothing it says; FULL adds the message. A notification its app marks secret gives
+ * neither.
  */
 enum class NotificationPreview { OFF, SENDER, FULL }
 

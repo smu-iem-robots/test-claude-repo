@@ -72,6 +72,35 @@ class SearchAnswersTest {
     }
 
     @Test
+    fun `a plate's thickness alone is its weight per square metre`() {
+        assertEquals(weight("157 kg/m²", "20 mm · 7850 kg/m³"), steelWeight("plate 20"))
+        assertEquals(weight("1.57 t/m²", "200 mm · 7850 kg/m³"), steelWeight("pl 200"))
+        assertEquals(weight("21.6 kg/m²", "8 mm · 2700 kg/m³"), steelWeight("alu sheet 8"))
+    }
+
+    @Test
+    fun `a size may say its unit, and a diameter its sign`() {
+        assertEquals(weight("1.44 t", "Ø508 × 20 × 6000 mm · 7850 kg/m³"), steelWeight("pipe 508x20x6m"))
+        assertEquals(weight("46.88 t", "Ø8000 × 80 × 3000 mm · 7850 kg/m³"), steelWeight("can 8000x80x3m"))
+        assertEquals(weight("314 kg", "2000 × 1000 × 20 mm · 7850 kg/m³"), steelWeight("plate 2mx1mx20mm"))
+        assertEquals(weight("15.41 kg", "Ø50 × 1000 mm · 7850 kg/m³"), steelWeight("bar 5cm x 100cm"))
+        assertEquals(weight("240.7 kg/m", "Ø508 × 20 mm · 7850 kg/m³"), steelWeight("pipe Ø508x20"))
+        assertEquals(weight("240.7 kg/m", "Ø508 × 20 mm · 7850 kg/m³"), steelWeight("pipe Ø 508 x 20"))
+        assertEquals(weight("15.41 kg/m", "Ø50 mm · 7850 kg/m³"), steelWeight("round ⌀50"))
+        assertNull(steelWeight("pipe 508x20x6 m"))
+    }
+
+    @Test
+    fun `a structural grade is steel`() {
+        val plate = weight("314 kg", "2000 × 1000 × 20 mm · 7850 kg/m³")
+        assertEquals(plate, steelWeight("plate 2000x1000x20 S355"))
+        assertEquals(plate, steelWeight("S355J2+N plate 2000x1000x20"))
+        assertEquals(plate, steelWeight("plate 2000x1000x20 s420ml steel"))
+        assertNull(steelWeight("plate 2000x1000x20 S355 alu"))
+        assertNull(steelWeight("plate 2000x1000x20 S999"))
+    }
+
+    @Test
     fun `sizes that do not make the shape are not weighed`() {
         listOf(
             "plate 2000x1000", "plate", "pipe 508", "pipe 50x30", "plate 2000x1000x0",

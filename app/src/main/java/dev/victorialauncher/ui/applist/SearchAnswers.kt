@@ -101,16 +101,44 @@ private val MATERIAL_WORDS = mapOf(
     "alu" to 2700.0, "aluminium" to 2700.0, "aluminum" to 2700.0,
 )
 
-/** The x in 2000x1000x20, and its neighbours, only between two figures so "inox" keeps its x. */
-private val DIMENSION_SEPARATOR = Regex("(?<=[0-9.,])\\s*[x×*]\\s*(?=[0-9.,])")
+/**
+ * The structural grades as a drawing writes them: "S355", "S355J2+N", "S420ML". Each is a carbon
+ * steel, so naming one says what naming steel says.
+ */
+private val STEEL_GRADE = Regex("^s(?:235|275|355|420|460|690)[a-z0-9+]*$")
+
+/**
+ * The x in 2000x1000x20, and its neighbours, only after a figure so "inox" keeps its x. The
+ * figure may carry its unit up to the x, as the 2m in "2mx1mx20mm" does.
+ */
+private val DIMENSION_SEPARATOR = Regex("(?<=[0-9.,]|[0-9][cm]?m)\\s*[x×*]\\s*(?=[0-9.,])")
+
+/** How a drawing marks a diameter, which a size may start with: "pipe Ø508x20". */
+private val DIAMETER_SIGNS = charArrayOf('ø', '⌀')
+
+/** The units a size may say it is in, millimetres first so 20mm is not taken for 20 metres. */
+private val SIZE_UNITS = listOf("mm" to 1.0, "cm" to 10.0, "m" to 1000.0)
+
+/**
+ * [word] as a size in millimetres, or null when it is not one. Millimetres unless it says
+ * otherwise, since that is what a drawing is dimensioned in; a length is the one people give in
+ * metres, and "pipe 508x20x12m" says so.
+ */
+private fun millimetres(word: String): Double? {
+    val figure = word.trimStart(*DIAMETER_SIGNS)
+    val unit = SIZE_UNITS.firstOrNull { (suffix, _) -> figure.endsWith(suffix) }
+        ?: return wholeNumber(figure)
+    return wholeNumber(figure.dropLast(unit.first.length))?.let { it * unit.second }
+}
 
 /**
  * What a plate, pipe or round bar weighs, from its sizes in millimetres.
  *
- * "plate 2000x1000x20" is length × width × thickness; "pipe 508x20" is outer diameter × wall,
- * per metre, and a third figure is its length; "round 50" is a solid bar's diameter, likewise.
- * A pipe is the wall's mean circumference times its thickness, π·(D−t)·t, which is exact for a
- * tube, so a rolled can of a monopile weighs what this says it does.
+ * "plate 2000x1000x20" is length × width × thickness, and a thickness alone is the plate's
+ * weight per square metre; "pipe 508x20" is outer diameter × wall, per metre, and a third figure
+ * is its length; "round 50" is a solid bar's diameter, likewise. A pipe is the wall's mean
+ * circumference times its thickness, π·(D−t)·t, which is exact for a tube, so a rolled can of a
+ * monopile weighs what this says it does.
  */
 internal fun steelWeight(text: String): SearchAnswer.Value? {
     val words = DIMENSION_SEPARATOR.replace(text.trim().lowercase(), " ")
@@ -120,7 +148,8 @@ internal fun steelWeight(text: String): SearchAnswer.Value? {
     var density: Double? = null
     val sizes = mutableListOf<Double>()
     for (word in words) {
-        val size = wholeNumber(word.removeSuffix("mm"))
+        val size = millimetres(word)
+        val material = MATERIAL_WORDS[word] ?: STEEL_DENSITY.takeIf { STEEL_GRADE.matches(word) }
         when {
             size != null -> {
                 // The shape first, as a cutting list writes it. "Bar" is a unit of pressure
@@ -134,11 +163,12 @@ internal fun steelWeight(text: String): SearchAnswer.Value? {
                 section = SECTION_WORDS[word]
                 sectionWord = word
             }
-            word in MATERIAL_WORDS -> {
-                if (density != null) return null
-                density = MATERIAL_WORDS[word]
+            material != null -> {
+                // "steel S355" names one material twice, which is fine; "S355 alu" names two.
+                if (density != null && density != material) return null
+                density = material
             }
-            word == "mm" -> Unit
+            word == "mm" || word.all { it in DIAMETER_SIGNS } -> Unit
             else -> return null
         }
     }
@@ -149,11 +179,13 @@ internal fun steelWeight(text: String): SearchAnswer.Value? {
     val rho = density ?: STEEL_DENSITY
     val metres = sizes.map { it / 1000.0 }
     val figures = sizes.joinToString(" × ") { formatNumber(it, 10) }
-    // The weight, whether it is per metre for want of a length, and the sizes as given.
-    val (kilograms, perMetre, described) = when (shape) {
-        Section.PLATE -> {
-            if (sizes.size != 3) return null
-            Triple(metres[0] * metres[1] * metres[2] * rho, false, figures)
+    // The weight, what it is a weight per when it is not the whole piece's, and the sizes.
+    val (kilograms, per, described) = when (shape) {
+        Section.PLATE -> when (sizes.size) {
+            // How plate is ordered and priced before anyone has cut it to a size.
+            1 -> Triple(metres[0] * rho, "/m²", figures)
+            3 -> Triple(metres[0] * metres[1] * metres[2] * rho, "", figures)
+            else -> return null
         }
         Section.PIPE -> {
             if (sizes.size !in 2..3) return null
@@ -164,9 +196,9 @@ internal fun steelWeight(text: String): SearchAnswer.Value? {
             if (wall * 2.0 > diameter) return null
             val kilogramsPerMetre = PI * (diameter - wall) * wall * rho
             if (sizes.size == 3) {
-                Triple(kilogramsPerMetre * metres[2], false, "Ø$figures")
+                Triple(kilogramsPerMetre * metres[2], "", "Ø$figures")
             } else {
-                Triple(kilogramsPerMetre, true, "Ø$figures")
+                Triple(kilogramsPerMetre, "/m", "Ø$figures")
             }
         }
         Section.ROUND -> {
@@ -174,17 +206,16 @@ internal fun steelWeight(text: String): SearchAnswer.Value? {
             val diameter = metres[0]
             val kilogramsPerMetre = PI / 4.0 * diameter * diameter * rho
             if (sizes.size == 2) {
-                Triple(kilogramsPerMetre * metres[1], false, "Ø$figures")
+                Triple(kilogramsPerMetre * metres[1], "", "Ø$figures")
             } else {
-                Triple(kilogramsPerMetre, true, "Ø$figures")
+                Triple(kilogramsPerMetre, "/m", "Ø$figures")
             }
         }
     }
     // 1e200 is a number as far as the reader is concerned, and three of them multiply past what
     // a double holds.
     if (!kilograms.isFinite()) return null
-    val weight = formatWeight(kilograms) + if (perMetre) "/m" else ""
-    return SearchAnswer.Value(weight, "$described mm · ${formatNumber(rho, 10)} kg/m³")
+    return SearchAnswer.Value(formatWeight(kilograms) + per, "$described mm · ${formatNumber(rho, 10)} kg/m³")
 }
 
 private val STEEL_SPACE = Regex("\\s+")

@@ -30,13 +30,20 @@ class ClockWidgetWeatherReceiver : BroadcastReceiver() {
         // answer it eventually gives.
         if (json.length > MAX_JSON_CHARS) return
 
-        val parsed = runCatching {
+        val stored = runCatching {
             val obj = JSONObject(json)
-            // Kelvin, as whole degrees. Gadgetbridge's own WeatherSpec is the shape here.
-            obj.optInt("currentTemp", 0) to obj.optString("currentCondition", "")
-        }.getOrNull() ?: return
-
-        if (!ClockWidgetWeather.store(context, parsed.first, parsed.second)) return
+            // Gadgetbridge's own WeatherSpec is the shape here: kelvin as whole degrees, wind in
+            // km/h and the degrees it blows from. Breezy leaves out what it does not know rather
+            // than sending a zero, so an absent wind reaches the store as no wind, not as calm.
+            ClockWidgetWeather.store(
+                context,
+                tempK = obj.optInt("currentTemp", 0),
+                condition = obj.optString("currentCondition", ""),
+                windKmh = obj.optDouble("windSpeed", Double.NaN),
+                windDegrees = obj.optInt("windDirection", -1),
+            )
+        }.getOrDefault(false)
+        if (!stored) return
 
         // The widgets are only ever drawn when something asks, and weather arriving is the
         // only thing that knows this one changed.

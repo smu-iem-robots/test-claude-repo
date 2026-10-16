@@ -136,6 +136,7 @@ class ClockWidgetConfigActivity : ComponentActivity() {
                                 config,
                                 onShow = { config = config.copy(showWeather = it) },
                                 onFahrenheit = { config = config.copy(weatherFahrenheit = it) },
+                                onWind = { config = config.copy(windUnit = it) },
                                 onPickApp = { pickingWeatherApp = true },
                             )
                             NotificationsSection(config) {
@@ -204,7 +205,7 @@ class ClockWidgetConfigActivity : ComponentActivity() {
                                     opacityLabel = stringResource(R.string.widget_clock_weather_opacity),
                                     preview = ClockWidgetWeather
                                         .current(this@ClockWidgetConfigActivity)
-                                        ?.let { ClockWidgetWeather.formatted(it, config.weatherFahrenheit) }
+                                        ?.let { ClockWidgetWeather.line(this@ClockWidgetConfigActivity, it, config) }
                                         ?: stringResource(R.string.widget_clock_weather_waiting),
                                     size = config.weatherSizeSp,
                                     sizeRange = ClockWidgetConfig.DATE_SIZE_RANGE,
@@ -490,12 +491,16 @@ private fun TextSection(
  *
  * The hint is the whole setup: nothing appears here until another app is actually sending, and
  * without being told that, an empty row reads as broken rather than as waiting.
+ *
+ * The wind is part of the same row rather than a row of its own, so it is chosen here and only
+ * offered while there is weather to add it to.
  */
 @Composable
 private fun WeatherSection(
     config: ClockWidgetConfig,
     onShow: (Boolean) -> Unit,
     onFahrenheit: (Boolean) -> Unit,
+    onWind: (WindUnit) -> Unit,
     onPickApp: () -> Unit,
 ) {
     Column {
@@ -519,6 +524,24 @@ private fun WeatherSection(
                     config.weatherFahrenheit,
                 ) { onFahrenheit(true) }
             }
+            Text(
+                stringResource(R.string.widget_clock_wind),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            Chips {
+                // Listed rather than taken from the enum, to put off last as the date's choices do.
+                listOf(
+                    WindUnit.BEAUFORT,
+                    WindUnit.METRES_PER_SECOND,
+                    WindUnit.KILOMETRES_PER_HOUR,
+                    WindUnit.KNOTS,
+                    WindUnit.MILES_PER_HOUR,
+                    WindUnit.OFF,
+                ).forEach { unit ->
+                    FilledChip(windLabel(unit), config.windUnit == unit) { onWind(unit) }
+                }
+            }
             TextButton(onClick = onPickApp) {
                 Text(stringResource(R.string.widget_clock_weather_opens))
             }
@@ -529,6 +552,18 @@ private fun WeatherSection(
         }
     }
 }
+
+@Composable
+private fun windLabel(unit: WindUnit): String = stringResource(
+    when (unit) {
+        WindUnit.OFF -> R.string.widget_clock_wind_hide
+        WindUnit.BEAUFORT -> R.string.widget_clock_wind_beaufort
+        WindUnit.METRES_PER_SECOND -> R.string.widget_clock_wind_ms
+        WindUnit.KILOMETRES_PER_HOUR -> R.string.widget_clock_wind_kmh
+        WindUnit.KNOTS -> R.string.widget_clock_wind_knots
+        WindUnit.MILES_PER_HOUR -> R.string.widget_clock_wind_mph
+    },
+)
 
 /**
  * Which app the weather row opens.

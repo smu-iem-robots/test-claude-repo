@@ -5,7 +5,8 @@ import dev.victorialauncher.data.NotificationPreview
 
 /**
  * The newest notification a package is showing, cut down to what a line under its favorite
- * can say: who it is from and what it says. [text] is empty when the app keeps that private.
+ * can say: who it is from and what it says. [text] is empty when the app keeps that private,
+ * and under SENDER, which never shows it.
  */
 data class NotificationSnippet(
     val title: String,
@@ -46,7 +47,11 @@ internal object NotificationSnippets {
     private val whitespace = Regex("\\s+")
 
     /**
-     * The snippet one notification gives, or null for none.
+     * The snippet one notification gives under [mode], or null for none.
+     *
+     * Nothing is read while the line is OFF, and SENDER keeps no message: what is never shown
+     * is not held either, so someone who did not ask for the line, or asked only who wrote,
+     * has none of what their notifications say kept by the launcher.
      *
      * A notification follows its own lock screen rules here, because the home screen is shown
      * to whoever holds the phone just as the lock screen is. A secret one gives nothing, and
@@ -56,11 +61,13 @@ internal object NotificationSnippets {
      * leave almost every favorite with no line at all, even under SENDER.
      */
     fun of(
+        mode: NotificationPreview,
         exposure: NotificationExposure,
         postTime: Long,
         own: () -> NotificationWords,
         publicVersion: () -> NotificationWords?,
     ): NotificationSnippet? {
+        if (mode == NotificationPreview.OFF) return null
         val words = when (exposure) {
             NotificationExposure.SECRET -> return null
             NotificationExposure.PUBLIC -> own()
@@ -69,7 +76,9 @@ internal object NotificationSnippets {
         // A conversation is named for the group it is in, else for whoever wrote last; the
         // app's own title is often a summary such as "3 new messages" instead.
         val title = firstNotBlank(words.conversationTitle, words.lastSender, words.title)
-        val text = firstNotBlank(words.lastMessage, words.text)
+        val text = if (mode == NotificationPreview.FULL) firstNotBlank(words.lastMessage, words.text) else ""
+        // Under SENDER that leaves out one that names nobody, so an older one from the same
+        // app that does name someone keeps the line rather than a newer one with nothing in it.
         if (title.isEmpty() && text.isEmpty()) return null
         return NotificationSnippet(title = title, text = text, postTime = postTime)
     }

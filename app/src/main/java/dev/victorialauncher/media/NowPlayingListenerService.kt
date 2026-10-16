@@ -12,7 +12,15 @@ import android.media.session.PlaybackState
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
+import dev.victorialauncher.VictoriaApp
+import dev.victorialauncher.data.NotificationPreview
 import dev.victorialauncher.widget.ClockWidgetProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class NowPlayingListenerService : NotificationListenerService() {
 
@@ -48,6 +56,18 @@ class NowPlayingListenerService : NotificationListenerService() {
 
     private var watched: MediaController? = null
 
+    /**
+     * What the line under a favorite is set to, copied here because the shade is read on every
+     * post and removal, which is no place to wait on a settings file. OFF until it has been
+     * read, so nothing is taken from a notification before anyone is known to want it.
+     */
+    private var previewMode = NotificationPreview.OFF
+
+    // On the main thread, where the listener's own callbacks arrive, so a pass the setting
+    // starts never runs beside one a notification started.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var previewModeWatch: Job? = null
+
     private val controllerCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) = republish()
         override fun onPlaybackStateChanged(state: PlaybackState?) = republish()
@@ -72,15 +92,36 @@ class NowPlayingListenerService : NotificationListenerService() {
         } catch (e: SecurityException) {
             NowPlayingBus.update(null)
         }
+        // Turning the line on, off or down to the sender changes nothing on the shade, so
+        // nothing else would have the lines read again, or forgotten.
+        previewModeWatch?.cancel()
+        previewModeWatch = scope.launch {
+            (application as VictoriaApp).prefs.notificationPreview.collect { mode ->
+                if (mode != previewMode) {
+                    previewMode = mode
+                    publishCounts()
+                }
+            }
+        }
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        previewModeWatch?.cancel()
+        previewModeWatch = null
+        // The setting may change before the next connection, and that one's first pass comes
+        // before the setting has been read again.
+        previewMode = NotificationPreview.OFF
         runCatching { sessionManager.removeOnActiveSessionsChangedListener(sessionsListener) }
         detach()
         NowPlayingBus.update(null)
         NotificationCountBus.clear()
         NotificationPreviewBus.clear()
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) = refresh()
@@ -106,9 +147,11 @@ class NowPlayingListenerService : NotificationListenerService() {
      * same messages a second time.
      *
      * The preview lines come out of the same pass with the same exclusions, so a favorite is
-     * never given a line about a notification its badge does not count.
+     * never given a line about a notification its badge does not count, and only as much of
+     * each notification is read for them as [previewMode] will show.
      */
     private fun publishCounts() {
+        val mode = previewMode
         val active = runCatching { activeNotifications }.getOrNull()
         if (active == null) {
             NotificationCountBus.clear()
@@ -123,7 +166,7 @@ class NowPlayingListenerService : NotificationListenerService() {
             val notification = sbn.notification ?: return@forEach
             if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return@forEach
             counts[sbn.packageName] = (counts[sbn.packageName] ?: 0) + 1
-            snippetOf(notification, sbn.postTime)?.let { snippet ->
+            snippetOf(notification, sbn.postTime, mode)?.let { snippet ->
                 NotificationSnippets.keepNewest(previews, sbn.packageName, snippet)
             }
         }
@@ -140,8 +183,13 @@ class NowPlayingListenerService : NotificationListenerService() {
      * its words are read at all. Extras an app filled with something that will not read back
      * give no line, rather than taking the counts down with them.
      */
-    private fun snippetOf(notification: Notification, postTime: Long): NotificationSnippet? = runCatching {
+    private fun snippetOf(
+        notification: Notification,
+        postTime: Long,
+        mode: NotificationPreview,
+    ): NotificationSnippet? = runCatching {
         NotificationSnippets.of(
+            mode = mode,
             exposure = when (notification.visibility) {
                 Notification.VISIBILITY_PUBLIC -> NotificationExposure.PUBLIC
                 Notification.VISIBILITY_SECRET -> NotificationExposure.SECRET

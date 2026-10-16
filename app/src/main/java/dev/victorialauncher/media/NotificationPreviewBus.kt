@@ -10,9 +10,10 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * The one place this launcher repeats what a notification says, and only once someone has
  * asked for it: upstream declined it outright (#63), and [NotificationCountBus] still says why.
- * The listener does not follow settings, so this is filled whether or not the line is on. It is
- * held in memory alone, never written anywhere and never logged, and it is only ever what the
- * shade is showing at that moment, cut down by [NotificationSnippets.of] first.
+ * The listener follows the setting, so this stays empty while the line is off and holds no
+ * message while it shows only the sender. It is held in memory alone, never written anywhere
+ * and never logged, and it is only ever what the shade is showing at that moment, cut down by
+ * [NotificationSnippets.of] first.
  */
 object NotificationPreviewBus {
     private val _previews = MutableStateFlow<Map<String, NotificationSnippet>>(emptyMap())

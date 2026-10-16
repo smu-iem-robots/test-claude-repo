@@ -21,7 +21,8 @@ class NotificationSnippetsTest {
         own: NotificationWords = message,
         publicVersion: NotificationWords? = null,
         postTime: Long = 10L,
-    ) = NotificationSnippets.of(exposure, postTime, { own }, { publicVersion })
+        mode: NotificationPreview = NotificationPreview.FULL,
+    ) = NotificationSnippets.of(mode, exposure, postTime, { own }, { publicVersion })
 
     @Test
     fun `a public notification gives its title and text`() {
@@ -29,9 +30,48 @@ class NotificationSnippetsTest {
     }
 
     @Test
+    fun `nothing is read while the line is off`() {
+        var read = false
+        val result = NotificationSnippets.of(
+            NotificationPreview.OFF,
+            NotificationExposure.PUBLIC,
+            10L,
+            { read = true; message },
+            { read = true; null },
+        )
+        assertNull(result)
+        assertFalse(read)
+    }
+
+    @Test
+    fun `sender keeps who it is from and not the message`() {
+        assertEquals(
+            NotificationSnippet("Ana", "", 10L),
+            snippet(NotificationExposure.PUBLIC, mode = NotificationPreview.SENDER),
+        )
+    }
+
+    @Test
+    fun `sender keeps no last message of a conversation either`() {
+        val chat = NotificationWords(title = "2 new messages", lastSender = "Ben", lastMessage = "On my way")
+        assertEquals(
+            NotificationSnippet("Ben", "", 10L),
+            snippet(NotificationExposure.PUBLIC, own = chat, mode = NotificationPreview.SENDER),
+        )
+    }
+
+    @Test
+    fun `sender gives nothing for a notification that names nobody, full gives its text`() {
+        val untitled = NotificationWords(text = "Backup done")
+        assertNull(snippet(NotificationExposure.PUBLIC, own = untitled, mode = NotificationPreview.SENDER))
+        assertEquals(NotificationSnippet("", "Backup done", 10L), snippet(NotificationExposure.PUBLIC, own = untitled))
+    }
+
+    @Test
     fun `a secret notification gives nothing and is never read`() {
         var read = false
         val result = NotificationSnippets.of(
+            NotificationPreview.FULL,
             NotificationExposure.SECRET,
             10L,
             { read = true; message },
@@ -45,6 +85,7 @@ class NotificationSnippetsTest {
     fun `a private notification gives its public version and its own words go unread`() {
         var ownRead = false
         val result = NotificationSnippets.of(
+            NotificationPreview.FULL,
             NotificationExposure.PRIVATE,
             10L,
             { ownRead = true; message },

@@ -359,7 +359,7 @@ fun AppListScreen(
                 val near = searchModel
                     .filtered { row -> row.section != RECENT_SECTION && distanceOf(row.app) != NO_TYPO_MATCH }
                     .rankedBy { distanceOf(it) }
-                SearchResult(near, soleMatch = null)
+                SearchResult(near, soleMatch = null, guessed = near.rows.isNotEmpty())
             } else {
                 // Never on the package name alone, which is a guess at an app rather than its
                 // name, and opening it unasked would be acting on the guess. Nor the private
@@ -1325,28 +1325,7 @@ fun AppListScreen(
             },
         ) {
             if (searching && webSearchFallback && displayModel.rows.isEmpty()) {
-                item(key = "websearch") {
-                    val term = query.trim()
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onWebSearch(term) }
-                            .padding(horizontal = 24.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Filled.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.width(16.dp))
-                        Text(
-                            stringResource(R.string.applist_search_web, term),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
+                item(key = "websearch") { WebSearchRow(query.trim(), onWebSearch) }
             }
 
             itemsIndexed(
@@ -1405,6 +1384,15 @@ fun AppListScreen(
                     )
                 }
                 }
+            }
+
+            // Still offered when the only apps shown are guesses at a typo. A word with no app
+            // behind it is the likeliest thing to be meant for the browser, and it is also the
+            // likeliest to land a slip or two from some app's name, so forgiving typos had taken
+            // the row away from exactly the queries it is for. After the rows rather than ahead
+            // of them, so their places in the list stay their places in the model.
+            if (searching && webSearchFallback && searchResult.guessed) {
+                item(key = "websearch") { WebSearchRow(query.trim(), onWebSearch) }
             }
 
             // Settings shortcut, pinned after Z. Optional: it is the one row in a list of
@@ -1536,8 +1524,35 @@ fun AppListScreen(
     }
 }
 
-/** A query's results, and the one app they come to when they come to exactly one. */
-private class SearchResult(val model: AppListModel, val soleMatch: AppInfo?)
+/**
+ * A query's results, and the one app they come to when they come to exactly one. [guessed]
+ * when nothing matched and the apps shown are only the ones a typo or two away.
+ */
+private class SearchResult(val model: AppListModel, val soleMatch: AppInfo?, val guessed: Boolean = false)
+
+/** The offer to hand what was typed to the browser. */
+@Composable
+private fun WebSearchRow(term: String, onWebSearch: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onWebSearch(term) }
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.width(16.dp))
+        Text(
+            stringResource(R.string.applist_search_web, term),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
 
 /** The row's key in the list, unique even where one app is listed twice. */
 private fun rowKey(row: AppListRow): String = when (row) {

@@ -1122,13 +1122,16 @@ fun AppListScreen(
     //
     // With no app to launch, Go takes the next thing on screen instead, in the order each is
     // worth a key press: an action, then an answer to copy, then the web search.
+    //
+    // An answer gets what a tap on it gets, so a coin or the dice roll again rather than put
+    // "Heads" on the clipboard: Go after "flip" is asking for another flip.
     fun launchTopResult() {
         if (!searching) return
         val top = displayModel.rows.filterIsInstance<AppListRow.Entry>().firstOrNull()
         when {
             top != null -> onLaunch(top.app)
             actions.isNotEmpty() -> runAction(actions.first())
-            shownAnswers.isNotEmpty() -> copySearchAnswer(context, shownAnswers.first().value)
+            shownAnswers.isNotEmpty() -> tapAnswer(shownAnswers.first())
             webSearchFallback -> onWebSearch(query.trim())
         }
     }

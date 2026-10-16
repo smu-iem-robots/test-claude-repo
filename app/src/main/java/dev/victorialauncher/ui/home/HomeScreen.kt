@@ -1421,8 +1421,13 @@ private fun FavoriteRow(
                 val nameColor = if (app.disabled) contentColor.copy(alpha = 0.5f) else contentColor
                 // Looked up in here, so a notification coming or going redraws this name and not
                 // the row around it. Never in edit mode, where a line arriving would change the
-                // height of a row that is being dragged.
-                val preview = if (notificationPreview != NotificationPreview.OFF && !editMode) {
+                // height of a row that is being dragged. Never under a pinned shortcut either: it
+                // names one thing in its app, a contact or a page, and a line about whatever that
+                // app posted last would read as being about it. Its badge, a count for the whole
+                // app, says nothing anyone could take that way.
+                val preview = if (
+                    notificationPreview != NotificationPreview.OFF && !editMode && app.kind == EntryKind.APP
+                ) {
                     notificationPreviewLine(notificationPreview, app)
                 } else {
                     null

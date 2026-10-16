@@ -380,6 +380,140 @@
     <string name="now_playing_previous">Previous</string>
     <string name="now_playing_play_pause">Play/pause</string>
     <string name="now_playing_next">Next</string>
+
+    <!-- Uninstall, from an app's long-press menu -->
+    <string name="action_uninstall">Uninstall</string>
+    <string name="uninstall_failed">Couldn\'t open the uninstaller</string>
+
+    <!-- Pause before opening -->
+    <string name="action_pause_before_opening">Pause before opening</string>
+    <string name="action_stop_pausing">Stop pausing</string>
+    <string name="mindful_line_breath">Take a breath.</string>
+    <string name="mindful_line_still_want">Still want it?</string>
+    <string name="mindful_line_plan">Was this the plan?</string>
+    <string name="mindful_line_nothing_new">Nothing new since last time, probably.</string>
+    <string name="mindful_never_mind">Never mind</string>
+    <string name="mindful_open">Open %1$s</string>
+    <string name="mindful_tally_first">First time today</string>
+    <string name="mindful_tally_not_opened">Not opened yet today</string>
+    <string name="mindful_tally_resisted">%1$s · resisted %2$d</string>
+    <string name="mindful_picker_count">Pausing (%1$d)</string>
+    <string name="mindful_picker_add">Open straight away</string>
+    <string name="settings_mindful_apps">Pause before opening</string>
+    <string name="settings_mindful_none">No apps pause</string>
+    <string name="settings_mindful_seconds">Length of the pause</string>
+
+    <!-- Double-tap the wallpaper to lock -->
+    <string name="settings_double_tap_home_lock">Double-tap the wallpaper to lock</string>
+    <string name="settings_double_tap_home_lock_detail">Needs Victoria Launcher enabled under Accessibility, like the double tap on the A-Z strip</string>
+
+    <!-- A line under a favorite saying what its newest notification is (#121) -->
+    <string name="settings_notification_preview">Notification line under favorites</string>
+    <string name="settings_notification_preview_detail">Needs notification access. Sender shows who a notification is from; Full also shows the message. Apps that mark a notification secret show nothing</string>
+    <string name="settings_notification_preview_access_detail">Needed for the notification line under favorites</string>
+    <string name="notification_preview_off">Off</string>
+    <string name="notification_preview_sender">Sender</string>
+    <string name="notification_preview_full">Full</string>
+
+    <!-- Answers in the app list's search -->
+    <string name="search_answer_copied">Copied</string>
+    <string name="search_answer_again">tap for another</string>
+    <string name="search_answer_divided_by_zero">∞ — nice try</string>
+    <string name="search_answer_heads">Heads</string>
+    <string name="search_answer_tails">Tails</string>
+    <string name="search_answer_coin">Coin flip</string>
+    <string name="search_answer_eight_ball">Magic 8-Ball</string>
+    <string name="search_answer_meaning_of_life">The answer to life, the universe and everything</string>
+
+    <!-- The WMO names of Beaufort forces 0 to 12, in order -->
+    <string-array name="search_beaufort_names">
+        <item>Calm</item>
+        <item>Light air</item>
+        <item>Light breeze</item>
+        <item>Gentle breeze</item>
+        <item>Moderate breeze</item>
+        <item>Fresh breeze</item>
+        <item>Strong breeze</item>
+        <item>Near gale</item>
+        <item>Gale</item>
+        <item>Strong gale</item>
+        <item>Storm</item>
+        <item>Violent storm</item>
+        <item>Hurricane force</item>
+    </string-array>
+
+    <!-- The Magic 8-Ball's twenty classic answers; the code expects exactly twenty -->
+    <string-array name="search_eight_ball">
+        <item>It is certain</item>
+        <item>It is decidedly so</item>
+        <item>Without a doubt</item>
+        <item>Yes definitely</item>
+        <item>You may rely on it</item>
+        <item>As I see it, yes</item>
+        <item>Most likely</item>
+        <item>Outlook good</item>
+        <item>Yes</item>
+        <item>Signs point to yes</item>
+        <item>Reply hazy, try again</item>
+        <item>Ask again later</item>
+        <item>Better not tell you now</item>
+        <item>Cannot predict now</item>
+        <item>Concentrate and ask again</item>
+        <item>Don\'t count on it</item>
+        <item>My reply is no</item>
+        <item>My sources say no</item>
+        <item>Outlook not so good</item>
+        <item>Very doubtful</item>
+    </string-array>
+
+    <!-- What the launcher says when its own name is typed; the code expects exactly four -->
+    <string-array name="search_hello">
+        <item>That\'s me</item>
+        <item>No internet, no ads, just your apps</item>
+        <item>Still here, still a list</item>
+        <item>Looking for someone?</item>
+    </string-array>
+
+    <!-- Actions for what was typed in the app list's search -->
+    <string name="search_action_call">Call %1$s</string>
+    <string name="search_action_text">Text %1$s</string>
+    <string name="search_action_open">Open %1$s</string>
+    <string name="search_action_email">Email %1$s</string>
+    <string name="search_action_timer">Start a %1$s timer</string>
+    <string name="search_action_alarm">Set an alarm for %1$s</string>
+    <string name="search_action_unavailable">Nothing on this phone can do that</string>
+
+    <!-- Settings for the app list's search -->
+    <string name="settings_search_answers">Answers in search</string>
+    <string name="settings_search_answers_detail">Sums, unit conversions, steel weights, a coin and dice, worked out as you type. Needs the search bar</string>
+    <string name="settings_search_actions">Actions for what you type</string>
+    <string name="settings_search_actions_detail">Call or text a number, open a link, write an email, start a timer or set an alarm. Needs the search bar</string>
+    <string name="settings_search_typos">Forgive typos</string>
+    <string name="settings_search_typos_detail">When nothing matches, show the apps a letter or two away from what you typed. Needs the search bar</string>
+    <string name="settings_search_open_only">Open the only match</string>
+    <string name="settings_search_open_only_detail">Opens an app the moment what you type matches its name and nothing else. A search that starts with a number waits for Go. Needs the search bar</string>
+
+    <!-- Wind on the clock widget's weather row -->
+    <string name="widget_clock_wind">Wind</string>
+    <string name="widget_clock_wind_beaufort">Beaufort</string>
+    <string name="widget_clock_wind_ms">m/s</string>
+    <string name="widget_clock_wind_kmh">km/h</string>
+    <string name="widget_clock_wind_knots">Knots</string>
+    <string name="widget_clock_wind_mph">mph</string>
+    <string name="widget_clock_wind_hide">No wind</string>
+
+    <!-- Where the wind comes from, shortened as on a weather map: eight points clockwise from north; the code expects exactly eight -->
+    <string-array name="widget_clock_wind_compass">
+        <item>N</item>
+        <item>NE</item>
+        <item>E</item>
+        <item>SE</item>
+        <item>S</item>
+        <item>SW</item>
+        <item>W</item>
+        <item>NW</item>
+    </string-array>
+
     <plurals name="widget_clock_notification_count">
         <item quantity="one">%1$d notification</item>
         <item quantity="other">%1$d notifications</item>
@@ -395,5 +529,13 @@
     <plurals name="settings_frequent_excluded_count">
         <item quantity="one">%1$d app kept out</item>
         <item quantity="other">%1$d apps kept out</item>
+    </plurals>
+    <plurals name="mindful_tally_opened">
+        <item quantity="one">Opened %1$d time today</item>
+        <item quantity="other">Opened %1$d times today</item>
+    </plurals>
+    <plurals name="settings_mindful_count">
+        <item quantity="one">%1$d app waits a moment before it opens</item>
+        <item quantity="other">%1$d apps wait a moment before they open</item>
     </plurals>
 </resources>

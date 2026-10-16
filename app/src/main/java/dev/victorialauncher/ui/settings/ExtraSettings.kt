@@ -16,9 +16,16 @@ import androidx.compose.runtime.Composable
  *
  * [onOpenRoute] navigates to a destination registered in VictoriaNavHost, for a row that
  * opens a screen of its own.
+ *
+ * [mindfulCount] is the one value that does arrive from there: how many of the listed apps
+ * pause. Counting means the whole app list, which VictoriaNavHost holds for the session and a
+ * row here could only scan for again, from nothing, on every visit.
  */
 @Composable
-internal fun extraSettingsEntries(onOpenRoute: (String) -> Unit): List<SettingsEntry> =
-    emptyList<SettingsEntry>() + mindfulSettingsEntries(onOpenRoute) +
+internal fun extraSettingsEntries(
+    onOpenRoute: (String) -> Unit,
+    mindfulCount: Int,
+): List<SettingsEntry> =
+    emptyList<SettingsEntry>() + mindfulSettingsEntries(onOpenRoute, mindfulCount) +
         notificationPreviewSettingsEntries(onOpenRoute) +
         searchSettingsEntries(onOpenRoute)

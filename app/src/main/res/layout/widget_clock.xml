@@ -62,6 +62,7 @@
         android:textColor="@color/widget_clock_text"
         android:textSize="14sp"
         android:maxLines="1"
+        android:ellipsize="end"
         android:visibility="gone"
         android:gravity="start"
         android:shadowColor="#80000000"

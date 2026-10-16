@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.victorialauncher.ui.home
 
-import android.widget.Toast
+import android.os.Process
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.calculateTargetValue
@@ -101,6 +101,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.onSizeChanged
@@ -108,6 +109,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -129,9 +131,9 @@ import dev.victorialauncher.data.folderToken
 import dev.victorialauncher.data.PaddingSlot
 import dev.victorialauncher.data.NotificationPreview
 import dev.victorialauncher.media.NotificationPreviewBus
+import dev.victorialauncher.media.PreviewKey
 import dev.victorialauncher.media.NotificationSnippets
 import dev.victorialauncher.media.NowPlayingWidget
-import dev.victorialauncher.media.openNowPlayingApp
 import dev.victorialauncher.service.HapticUtil
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.victorialauncher.ui.common.AppIcon
@@ -197,7 +199,7 @@ fun HomeScreen(
     edgeZoneSide: EdgeSide,
     /** How far in from the screen edge that zone reaches, its own gap included. */
     edgeZoneExtentDp: Int,
-    /** Bumped when HOME is pressed on a home screen already showing. */
+    /** Bumped whenever HOME is pressed, on the way back from another app as well. */
     homeIntentTick: Int,
     /** Whether opening an app from inside a folder closes the folder behind it. */
     closeFolderOnLaunch: Boolean,
@@ -236,10 +238,20 @@ fun HomeScreen(
     nowPlayingEnabled: Boolean,
     nowPlayingHeightDp: Int,
     onResizeNowPlaying: (Int) -> Unit,
+    /**
+     * A tap on the Now Playing card itself. Handed up rather than opened here, because the
+     * player may be an app marked to pause, and only the home destination holds the pause.
+     */
+    onOpenNowPlaying: () -> Unit,
     widgetActions: WidgetSlotActions,
     onLaunch: (AppInfo) -> Unit,
     onRemoveFavorite: (AppInfo) -> Unit,
-    onOpenFolderApp: (AppInfo) -> Unit,
+    /**
+     * Opens an app from inside a folder. [onOpened] is called once it has actually started,
+     * which for an app marked to pause is only when the pause is answered with Open, and never
+     * when it is let go or the launch fails.
+     */
+    onOpenFolderApp: (app: AppInfo, onOpened: () -> Unit) -> Unit,
     onRemoveFromFolder: (Folder, AppInfo) -> Unit,
     onRenameFolder: (Folder, String) -> Unit,
     onChangeFolderIcon: (Folder) -> Unit,
@@ -613,11 +625,16 @@ fun HomeScreen(
     val navigationBarInsets = WindowInsets.navigationBars
     val statusBarInsets = WindowInsets.statusBars
     val currentEditMode by rememberUpdatedState(editMode)
+    // HOME counts as taking the stack in hand even when it moves nothing. With the stack already
+    // at the top it is left where it is, so the offset alone could not tell that HOME had been
+    // pressed, and the stack slid up after it to show a folder nobody was looking at any more.
+    val currentHomeTick by rememberUpdatedState(homeIntentTick)
     LaunchedEffect(revealTick) {
         val folderId = revealFolderId
         if (revealTick == 0 || folderId == null) return@LaunchedEffect
         val key = folderToken(folderId)
         val offsetAtStart = offsetY.value
+        val homeAtStart = currentHomeTick
         // Finished once its foot has stayed put for a few frames, rather than after however long
         // the expansion is supposed to take: that holds whatever the animation is, with a
         // centered stack still settling around it, and at the system's animation speed unless
@@ -633,7 +650,10 @@ fun HomeScreen(
             if (bottom == lastBottom) steadyFrames++ else steadyFrames = 0
             lastBottom = bottom
         }
-        if (currentEditMode || folderId !in expandedFolders || offsetY.value != offsetAtStart) {
+        if (
+            currentEditMode || currentHomeTick != homeAtStart ||
+            folderId !in expandedFolders || offsetY.value != offsetAtStart
+        ) {
             return@LaunchedEffect
         }
         val top = itemTops[key] ?: return@LaunchedEffect
@@ -645,7 +665,9 @@ fun HomeScreen(
             visibleBottomPx = rootY + viewportHeight - navigationBarInsets.getBottom(density),
         )
         if (lift <= 0f) return@LaunchedEffect
-        // Within the drag's own bounds, so the next drag does not snap it back.
+        // Within the drag's own bounds, so the next drag does not snap it back. The stack's
+        // measured height takes in the navigation bar's room at its foot, so these bounds reach
+        // far enough to bring the last row clear of the bar.
         val floor = minOf(0f, (viewportHeight - contentHeight).toFloat())
         offsetY.animateTo(
             targetValue = (offsetY.value - lift).coerceIn(floor, 0f),
@@ -741,8 +763,12 @@ fun HomeScreen(
                         detectHorizontalDragGestures(
                             onDragStart = { start ->
                                 // The empty space under the whole stack. Anywhere higher is a
-                                // row, the widget, or Now Playing, and belongs to them.
-                                eligible = !editMode && start.y > offsetY.value + contentHeight
+                                // row, the widget, or Now Playing, and belongs to them. Not the
+                                // navigation bar's room at its foot, which shows nothing and is
+                                // part of that empty space as far as anyone can see.
+                                val stackBottom = offsetY.value + contentHeight -
+                                    navigationBarInsets.getBottom(density)
+                                eligible = !editMode && start.y > stackBottom
                                 travelled = 0f
                             },
                             onDragEnd = {
@@ -910,6 +936,7 @@ fun HomeScreen(
                     onDismissMenu = { nowPlayingMenu = false },
                     onEditLayout = { nowPlayingMenu = false; onEditModeChange(true) },
                     onOpenSettings = { nowPlayingMenu = false; onOpenSettings() },
+                    onOpen = onOpenNowPlaying,
                     onResize = onResizeNowPlaying,
                     onSetPadding = { slot, v -> setPadding(slot, v) },
                 )
@@ -1116,11 +1143,15 @@ fun HomeScreen(
                             onOpenApp = { member ->
                                 // Closed as the app starts rather than on the way back: there
                                 // is nothing to come back to yet, and a folder that shuts while
-                                // you are still looking at it is the launcher fidgeting.
-                                if (closeFolderOnLaunch) {
-                                    expandedFolders = expandedFolders - item.folder.id
+                                // you are still looking at it is the launcher fidgeting. Only
+                                // once it has started, though: a pause that is let go, or a
+                                // launch that fails, opened nothing, and the folder is still
+                                // what you were looking at.
+                                onOpenFolderApp(member) {
+                                    if (closeFolderOnLaunch) {
+                                        expandedFolders = expandedFolders - item.folder.id
+                                    }
                                 }
-                                onOpenFolderApp(member)
                             },
                             onRemoveApp = { member -> onRemoveFromFolder(item.folder, member) },
                             onMemberAppInfo = onAppInfo,
@@ -1210,6 +1241,7 @@ fun HomeScreen(
                             onDismissMenu = { nowPlayingMenu = false },
                             onEditLayout = { nowPlayingMenu = false; onEditModeChange(true) },
                             onOpenSettings = { nowPlayingMenu = false; onOpenSettings() },
+                            onOpen = onOpenNowPlaying,
                             onResize = onResizeNowPlaying,
                             onSetPadding = { slot, v -> setPadding(slot, v) },
                         )
@@ -1228,6 +1260,12 @@ fun HomeScreen(
                 }
             }
             }
+
+            // The stack is drawn under the navigation bar, so the bar's room is counted as part
+            // of it. The drag's bounds and a folder's reveal both stop at the foot of what is
+            // measured here; stopping at the screen's own edge left the last row behind the bar,
+            // where a tap goes to the system instead, and dragging could not bring it out.
+            Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)))
         }
 
         // A button in the corner nearest the thumb, for the one app reached often enough to
@@ -1419,39 +1457,67 @@ private fun FavoriteRow(
                 // Same dimming a hidden app gets in the A-Z list: a shortcut its publisher has
                 // switched off is still listed, but tapping it only explains why it will not open.
                 val nameColor = if (app.disabled) contentColor.copy(alpha = 0.5f) else contentColor
+                // The line's room is kept whether or not anything is written in it. A row is as
+                // tall as the taller of its icon and the text beside it, and with icons off or
+                // small the text is the taller: a line that came and went with its notification
+                // moved every favorite below it, and the A-Z strip matched to them, each time.
+                // Kept in edit mode too, so no row changes height on the way in or out of it.
+                // Never under a pinned shortcut: it names one thing in its app, a contact or a
+                // page, and a line about whatever that app posted last would read as being about
+                // it. Its badge, a count for the whole app, says nothing anyone could take that way.
+                val reserveLine = notificationPreview != NotificationPreview.OFF && app.kind == EntryKind.APP
                 // Looked up in here, so a notification coming or going redraws this name and not
-                // the row around it. Never in edit mode, where a line arriving would change the
-                // height of a row that is being dragged. Never under a pinned shortcut either: it
-                // names one thing in its app, a contact or a page, and a line about whatever that
-                // app posted last would read as being about it. Its badge, a count for the whole
-                // app, says nothing anyone could take that way.
-                val preview = if (
-                    notificationPreview != NotificationPreview.OFF && !editMode && app.kind == EntryKind.APP
-                ) {
+                // the row around it. Left blank in edit mode, where the rows are being arranged
+                // rather than read.
+                val preview = if (reserveLine && !editMode) {
                     notificationPreviewLine(notificationPreview, app)
                 } else {
                     null
                 }
+                val heldToName = notificationLineHeldToName(alignment, iconSide, LocalIconConfig.current.showIcons)
+                val lineAlignment = alignment.columnAlignment()
                 // Part of the name as far as a tap goes: with the compact tap area the row still
-                // hugs what it shows, now one line deeper and as wide as the longer of the two.
-                Column(modifier = labelModifier, horizontalAlignment = alignment.columnAlignment()) {
-                    Text(
-                        label,
-                        color = nameColor,
-                        fontSize = labelSizeSp.sp,
-                        textAlign = alignment.textAlign(),
-                    )
-                    if (preview != null) {
-                        val previewSp = labelSizeSp * PREVIEW_TEXT_SCALE
+                // hugs what it shows, now one line deeper. Laid out by hand rather than as a
+                // Column, which is as wide as the wider of the two: where the icon sits on the
+                // name's inner side the line is cut off at the name's width instead, so the icon
+                // stays beside the name whatever the line says.
+                Layout(
+                    modifier = labelModifier,
+                    content = {
                         Text(
-                            preview,
-                            color = nameColor.copy(alpha = nameColor.alpha * PREVIEW_ALPHA),
-                            fontSize = previewSp.sp,
-                            lineHeight = (previewSp * PREVIEW_LINE_HEIGHT).sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            label,
+                            color = nameColor,
+                            fontSize = labelSizeSp.sp,
                             textAlign = alignment.textAlign(),
                         )
+                        if (reserveLine) {
+                            val previewSp = labelSizeSp * PREVIEW_TEXT_SCALE
+                            Text(
+                                // A space rather than nothing, so the blank line measures exactly
+                                // as tall as a written one; and kept from a screen reader, which
+                                // has nothing to say about it.
+                                preview ?: " ",
+                                modifier = if (preview == null) Modifier.clearAndSetSemantics {} else Modifier,
+                                color = nameColor.copy(alpha = nameColor.alpha * PREVIEW_ALPHA),
+                                fontSize = previewSp.sp,
+                                lineHeight = (previewSp * PREVIEW_LINE_HEIGHT).sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = alignment.textAlign(),
+                            )
+                        }
+                    },
+                ) { measurables, constraints ->
+                    val loose = constraints.copy(minWidth = 0, minHeight = 0)
+                    val name = measurables[0].measure(loose)
+                    val line = measurables.getOrNull(1)
+                        ?.measure(if (heldToName) loose.copy(maxWidth = name.width) else loose)
+                    val width = maxOf(name.width, line?.width ?: 0)
+                    val nameX = lineAlignment.align(name.width, width, layoutDirection)
+                    val lineX = if (line != null) lineAlignment.align(line.width, width, layoutDirection) else 0
+                    layout(width, name.height + (line?.height ?: 0)) {
+                        name.place(nameX, 0)
+                        line?.place(lineX, name.height)
                     }
                 }
             }
@@ -1816,11 +1882,12 @@ private fun NowPlayingBlock(
     onDismissMenu: () -> Unit,
     onEditLayout: () -> Unit,
     onOpenSettings: () -> Unit,
+    /** A tap on the card: brings up what is playing, past a pause if the player has one. */
+    onOpen: () -> Unit,
     onResize: (Int) -> Unit,
     onSetPadding: (PaddingSlot, Int) -> Unit,
 ) {
     val density = LocalDensity.current
-    val context = LocalContext.current
 
     PaddingHandle(
         editMode = editMode,
@@ -1841,17 +1908,8 @@ private fun NowPlayingBlock(
                 .recordTouchPosition(touchPosition)
                 .combinedClickable(
                     // The transport buttons consume their own taps, so this is only ever the
-                    // card itself — which should get you to what is playing. Say so when it
-                    // can't, rather than leaving a tap that looks ignored.
-                    onClick = {
-                        if (!openNowPlayingApp(context)) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.now_playing_open_failed),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    },
+                    // card itself — which should get you to what is playing.
+                    onClick = onOpen,
                     onLongClick = {
                         onOpenMenu(
                             with(density) {
@@ -2090,22 +2148,28 @@ private const val PREVIEW_ALPHA = 0.7f
 /**
  * The line's height as a multiple of its own size. The body style it would inherit sets a line
  * height meant for full-size text, which leaves a small line in a gap as tall as a name. Kept
- * this tight, a name and its line still fit beside an icon at the default sizes, so a
- * notification arriving does not push every favorite below it down the screen.
+ * this tight, a name and its line still fit beside an icon at the default sizes, so the room
+ * every row keeps for it costs those rows nothing. That room, not this, is what stops a
+ * notification arriving from pushing every favorite below it down the screen: with icons off or
+ * small, the name and line are taller than the icon whatever this is set to.
  */
 private const val PREVIEW_LINE_HEIGHT = 1.3f
 
 /**
  * What to write under [app]'s name for its newest notification, or null for nothing.
  *
- * Looked up by package, as the badges are, so a work or private copy of an app shares its main
- * copy's line just as it shares its count. Empty, and so nothing, while the listener is not
- * connected: the bus is cleared when the service goes.
+ * Looked up by package and profile, so each copy of an app shows only what its own profile
+ * posted: a line names a sender and says what they wrote, and under the wrong copy it credits a
+ * work email to the personal account, or puts an open private space's messages in a row that is
+ * no part of it. The badge is still shared by every copy; a count says nothing about whose it is.
+ * Empty, and so nothing, while the listener is not connected: the bus is cleared when the
+ * service goes.
  */
 @Composable
 private fun notificationPreviewLine(mode: NotificationPreview, app: AppInfo): String? {
     val previews by NotificationPreviewBus.previews.collectAsState()
-    return NotificationSnippets.line(mode, previews[app.componentName.packageName])
+    val key = PreviewKey(app.componentName.packageName, app.user ?: Process.myUserHandle())
+    return NotificationSnippets.line(mode, previews[key])
 }
 
 /** Folders get the same treatment as apps: their own name and their own icon. */

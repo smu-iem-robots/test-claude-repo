@@ -2,6 +2,7 @@
 package dev.victorialauncher.ui.applist
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,6 +37,11 @@ class SearchActionsTest {
         assertEquals("5551234567", phoneNumber("555-123-4567"))
         assertEquals("18005551234", phoneNumber("1-800-555-1234"))
         assertEquals("12345", phoneNumber("12345"))
+        assertEquals("+15551234567", phoneNumber("+1 (555) 123-4567"))
+        assertEquals("0475123456", phoneNumber("0475 / 12 34 56"))
+        assertEquals("0201234567", phoneNumber("020 - 123 4567"))
+        assertEquals("021234567", phoneNumber("02.123.45.67"))
+        assertNotNull(phoneNumber("+44 (0)20 7946 0958"))
     }
 
     @Test
@@ -44,6 +50,20 @@ class SearchActionsTest {
             "1500-250", "2024-10-15", "100-20", "3.14159265", "1234", "2048", "+1", "1,5",
             "06--1234567", "0612345678)", "06 1234 abc", "12", "",
         ).forEach { assertNull(it, phoneNumber(it)) }
+    }
+
+    @Test
+    fun `sums with brackets or long figures are not phone numbers`() {
+        listOf("(100-20)/2", "(250 - 50) / 4", "100000 - 2500", "100000-2500", "1200000/12").forEach {
+            assertNull(it, phoneNumber(it))
+        }
+    }
+
+    @Test
+    fun `a router's address is not a phone number`() {
+        listOf("192.168.178.1", "192.168.1.254", "172.16.10.10", "255.255.255.0").forEach {
+            assertNull(it, phoneNumber(it))
+        }
     }
 
     @Test
@@ -147,7 +167,10 @@ class SearchActionsTest {
 
     @Test
     fun `most queries offer nothing`() {
-        listOf("Spotify", "maps", "2048", "g", "", "200*15%", "10 km", "plate 2000x1000x20", "1500-250").forEach {
+        listOf(
+            "Spotify", "maps", "2048", "g", "", "200*15%", "10 km", "plate 2000x1000x20", "1500-250",
+            "(100-20)/2", "192.168.178.1",
+        ).forEach {
             assertTrue(it, searchActions(it).isEmpty())
         }
     }

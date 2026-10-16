@@ -25,7 +25,10 @@ data class ClockWidgetConfig(
     val weatherFahrenheit: Boolean,
     /** Package the weather row opens, or null for a row that is not a tap target. */
     val weatherPackage: String?,
-    /** What the weather row gives the wind in, after the condition; off leaves it out. */
+    /**
+     * What the weather row gives the wind in, between the temperature and the condition; off
+     * leaves it out.
+     */
     val windUnit: WindUnit,
     val showNotifications: Boolean,
     val notificationsSizeSp: Int,

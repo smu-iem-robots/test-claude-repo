@@ -4,6 +4,7 @@ package dev.victorialauncher.ui.applist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Locale
 
 /**
  * How a query is held up against an app's name. Names are plain strings here: the rows the list
@@ -58,6 +59,30 @@ class SearchMatchTest {
         assertEquals("strasse", foldForSearch("Straße"))
         assertEquals("istanbul", foldForSearch("İstanbul"))
         assertEquals("aeoa", foldForSearch("ÆØÅ"))
+    }
+
+    @Test
+    fun `a plain ASCII name is only lower-cased, whatever the phone's language`() {
+        val before = Locale.getDefault()
+        // Turkish lower-cases I to a dotless ı, which would stop "instagram" finding Instagram.
+        Locale.setDefault(Locale.forLanguageTag("tr-TR"))
+        try {
+            assertEquals("instagram", foldForSearch("INSTAGRAM"))
+            assertEquals("k-9 mail", foldForSearch("K-9 Mail"))
+            assertEquals("whatsapp", foldForSearch("WhatsApp"))
+            assertEquals("", foldForSearch(""))
+        } finally {
+            Locale.setDefault(before)
+        }
+    }
+
+    @Test
+    fun `marks already apart from their letter are dropped, outside the basic plane too`() {
+        assertEquals("cafe", foldForSearch("Cafe\u0301"))
+        // U+1D167, a combining mark written as a surrogate pair.
+        assertEquals("ab", foldForSearch("a\uD834\uDD67b"))
+        // Not every mark-like letter is a mark: a spacing one stays.
+        assertEquals("a\u02BCb", foldForSearch("a\u02BCb"))
     }
 
     @Test

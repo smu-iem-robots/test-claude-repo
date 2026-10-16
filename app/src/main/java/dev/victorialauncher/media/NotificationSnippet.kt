@@ -5,8 +5,8 @@ import dev.victorialauncher.data.NotificationPreview
 
 /**
  * The newest notification a package is showing, cut down to what a line under its favorite
- * can say: who it is from and what it says. [text] is empty when the app keeps that private,
- * and under SENDER, which never shows it.
+ * can say: who it is from and what it says. [text] is empty when the notification says nothing
+ * beyond who it is from, and under SENDER, which never shows it.
  */
 data class NotificationSnippet(
     val title: String,
@@ -28,6 +28,13 @@ internal data class NotificationWords(
     val conversationTitle: String? = null,
     val lastSender: String? = null,
     val lastMessage: String? = null,
+    /**
+     * Whether [title] names a person or a conversation, rather than what the notification is
+     * about. True only for a conversation, an email or a call. Anywhere else the title is the
+     * content itself: a calendar's "Couples therapy - Dr Smit", a bank's "€86.40 at Pharmacy",
+     * a reminder to take a medicine.
+     */
+    val titleNamesSender: Boolean = false,
 )
 
 /**
@@ -60,6 +67,9 @@ internal object NotificationSnippets {
      * screen's rule instead would have emptied FULL for nearly everything, since private is
      * what every app gets that never says otherwise, and a public version is mostly "1 new
      * message", which says nothing the badge did not.
+     *
+     * Under SENDER only a conversation, an email or a call says who it is from. Any other
+     * notification's title is what it says, not who sent it, so it gives no line there at all.
      */
     fun of(
         mode: NotificationPreview,
@@ -73,8 +83,11 @@ internal object NotificationSnippets {
             NotificationExposure.PUBLIC, NotificationExposure.PRIVATE -> own()
         }
         // A conversation is named for the group it is in, else for whoever wrote last; the
-        // app's own title is often a summary such as "3 new messages" instead.
-        val title = firstNotBlank(words.conversationTitle, words.lastSender, words.title)
+        // app's own title is often a summary such as "3 new messages" instead. Under SENDER that
+        // title is used only where it names someone: elsewhere it is the very thing SENDER was
+        // chosen to keep off the screen, an appointment or a payment.
+        val ownTitle = if (mode == NotificationPreview.FULL || words.titleNamesSender) words.title else null
+        val title = firstNotBlank(words.conversationTitle, words.lastSender, ownTitle)
         val text = if (mode == NotificationPreview.FULL) firstNotBlank(words.lastMessage, words.text) else ""
         // Under SENDER that leaves out one that names nobody, so an older one from the same
         // app that does name someone keeps the line rather than a newer one with nothing in it.
@@ -83,13 +96,14 @@ internal object NotificationSnippets {
     }
 
     /**
-     * Keeps [snippet] for [packageName] if it is newer than the one already held. A tie keeps
-     * the one seen first, so two notifications posted together do not swap places each time
-     * the shade is read again.
+     * Keeps [snippet] under [key] if it is newer than the one already held. A tie keeps the one
+     * seen first, so two notifications posted together do not swap places each time the shade
+     * is read again. The listener keys by app and profile ([PreviewKey]); any key will do here,
+     * so this stays testable without a UserHandle.
      */
-    fun keepNewest(into: MutableMap<String, NotificationSnippet>, packageName: String, snippet: NotificationSnippet) {
-        val held = into[packageName]
-        if (held == null || snippet.postTime > held.postTime) into[packageName] = snippet
+    fun <K> keepNewest(into: MutableMap<K, NotificationSnippet>, key: K, snippet: NotificationSnippet) {
+        val held = into[key]
+        if (held == null || snippet.postTime > held.postTime) into[key] = snippet
     }
 
     /** The line to draw for [snippet] under [mode], or null to draw none. */
@@ -125,5 +139,66 @@ internal object NotificationSnippets {
         if (flat.length <= SNIPPET_MAX_CHARS) return flat
         val end = if (flat[SNIPPET_MAX_CHARS - 1].isHighSurrogate()) SNIPPET_MAX_CHARS - 1 else SNIPPET_MAX_CHARS
         return flat.substring(0, end).trimEnd()
+    }
+}
+
+/**
+ * The snippet each notification gave on the last pass over the shade, by its key, so the next
+ * pass makes one again only for a notification that has changed.
+ *
+ * The listener reads the whole shade on every post and removal, a download ticking its progress
+ * bar included, and it does so on the main thread, the one the home screen draws on. Making
+ * every snippet again each time read every conversation in the shade back out of its style,
+ * several times a second while something showed progress, for lines that could not have changed:
+ * a notification says nothing new until it is posted again. One is made again when its post time
+ * moves, when the listener [forget]s it because it was just posted or removed, and when the
+ * setting changes, since a snippet made for one setting holds too much or too little for another.
+ *
+ * Only snippets are held, never the words they were cut from, so SENDER still keeps no message.
+ * A pass keeps only what it asked for: a notification gone from the shade, or one no longer
+ * asked about because the shade is hiding it or its app has made it secret, is dropped with that
+ * pass rather than kept for later.
+ *
+ * Main thread only, like the listener's callbacks.
+ */
+internal class SnippetMemo {
+    private class Made(val postTime: Long, val snippet: NotificationSnippet?)
+
+    private var mode = NotificationPreview.OFF
+    private var held = HashMap<String, Made>()
+    private var asked = HashMap<String, Made>()
+
+    /** Starts a pass over the shade under [mode]. */
+    fun begin(mode: NotificationPreview) {
+        if (mode != this.mode) held.clear()
+        this.mode = mode
+        asked = HashMap()
+    }
+
+    /**
+     * The snippet for the notification [key] posted at [postTime]: the one already made for it,
+     * or what [make] makes now. A null from [make] is kept like any other answer.
+     */
+    fun snippet(key: String, postTime: Long, make: () -> NotificationSnippet?): NotificationSnippet? {
+        val made = held[key]?.takeIf { it.postTime == postTime } ?: Made(postTime, make())
+        asked[key] = made
+        return made.snippet
+    }
+
+    /** Ends the pass: what it did not ask about is forgotten. */
+    fun end() {
+        held = asked
+        asked = HashMap()
+    }
+
+    /** Has the notification [key] read again on the next pass, its post time moved or not. */
+    fun forget(key: String) {
+        held.remove(key)
+    }
+
+    /** Forgets everything, for when nothing is to be shown or the listener goes. */
+    fun clear() {
+        held = HashMap()
+        asked = HashMap()
     }
 }

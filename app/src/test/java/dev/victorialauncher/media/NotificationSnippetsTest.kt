@@ -15,7 +15,8 @@ import org.junit.Test
  */
 class NotificationSnippetsTest {
 
-    private val message = NotificationWords(title = "Ana", text = "Lunch at one?")
+    // A chat that files itself as a message without a style to read: its title is who wrote.
+    private val message = NotificationWords(title = "Ana", text = "Lunch at one?", titleNamesSender = true)
 
     private fun snippet(
         exposure: NotificationExposure,
@@ -57,6 +58,36 @@ class NotificationSnippetsTest {
             NotificationSnippet("Ben", "", 10L),
             snippet(NotificationExposure.PUBLIC, own = chat, mode = NotificationPreview.SENDER),
         )
+    }
+
+    @Test
+    fun `sender gives nothing for a notification whose title is what it says`() {
+        val appointment = NotificationWords(title = "Couples therapy - Dr Smit", text = "10:00 - 11:00")
+        assertNull(snippet(NotificationExposure.PRIVATE, own = appointment, mode = NotificationPreview.SENDER))
+        assertEquals(
+            NotificationSnippet("Couples therapy - Dr Smit", "10:00 - 11:00", 10L),
+            snippet(NotificationExposure.PRIVATE, own = appointment),
+        )
+    }
+
+    @Test
+    fun `sender still names whoever wrote last in a conversation`() {
+        val chat = NotificationWords(title = "Ben", text = "On my way", lastSender = "Ben", lastMessage = "On my way")
+        assertEquals(
+            NotificationSnippet("Ben", "", 10L),
+            snippet(NotificationExposure.PRIVATE, own = chat, mode = NotificationPreview.SENDER),
+        )
+    }
+
+    @Test
+    fun `sender keeps an older line that names someone over a newer one that does not`() {
+        val previews = HashMap<String, NotificationSnippet>()
+        val sender = NotificationPreview.SENDER
+        snippet(NotificationExposure.PRIVATE, postTime = 10L, mode = sender)
+            ?.let { NotificationSnippets.keepNewest(previews, "com.chat", it) }
+        snippet(NotificationExposure.PRIVATE, own = NotificationWords(title = "Backup finished"), postTime = 20L, mode = sender)
+            ?.let { NotificationSnippets.keepNewest(previews, "com.chat", it) }
+        assertEquals(NotificationSnippet("Ana", "", 10L), previews["com.chat"])
     }
 
     @Test

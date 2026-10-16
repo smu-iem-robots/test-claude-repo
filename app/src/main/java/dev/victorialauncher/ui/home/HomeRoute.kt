@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.lifecycle.Lifecycle
@@ -75,6 +76,7 @@ import dev.victorialauncher.data.PaddingSlot
 import dev.victorialauncher.data.folderToken
 import dev.victorialauncher.media.NowPlayingBus
 import dev.victorialauncher.media.isListenerEnabled
+import dev.victorialauncher.media.openNowPlayingApp
 import dev.victorialauncher.service.SystemUi
 import dev.victorialauncher.ui.applist.AppListModel
 import dev.victorialauncher.ui.applist.AppListScreen
@@ -271,6 +273,9 @@ fun HomeRoute(
     val mindfulSeconds by app.prefs.mindfulSeconds.collectAsState(initial = DEFAULT_MINDFUL_SECONDS)
     // The app waiting behind a pause, or null while there is none on screen.
     var mindfulFor by remember { mutableStateOf<AppInfo?>(null) }
+    // What the press behind that pause still has to do once its app has actually opened — a
+    // folder set to close after a launch — or null for nothing. Run only if Open starts it.
+    var afterPauseOpen by remember { mutableStateOf<(() -> Unit)?>(null) }
     val doubleTapHomeLock by app.prefs.doubleTapHomeLock.collectAsState(initial = false)
 
     val nowPlaying by NowPlayingBus.state.collectAsState()
@@ -394,6 +399,9 @@ fun HomeRoute(
     // arrives here, so a row that is not an app is recognised once, here, rather than in each
     // of the four places a press is wired up.
     fun launchEntry(entry: AppInfo): Boolean = when {
+        // Nothing opens past a pause still waiting for an answer. Its scrim takes every touch,
+        // but TalkBack and a hardware keyboard press the rows under it without touching them.
+        mindfulFor != null -> false
         // Handed off rather than done here: locking or unlocking is several binder calls and
         // possibly the system's own authentication screen, which is not a press's work to do
         // on the main thread. True because the press was acted on — there is simply nothing
@@ -406,20 +414,30 @@ fun HomeRoute(
         // the answer is still yes. False because nothing is coming to the foreground yet, so
         // the list is put away as after a launch that did not happen, and the pause stands
         // over the home screen rather than over the list. Edit layout is never interrupted.
-        entry.key in mindfulApps && !homeEditMode && !bandEditMode -> {
+        // Nor is a shortcut its publisher has switched off: it cannot start, so the launch
+        // below explains that at once instead of after a countdown spent waiting for nothing.
+        entry.key in mindfulApps && !entry.disabled && !homeEditMode && !bandEditMode -> {
             mindfulFor = entry
+            // A new pause never inherits what an earlier press left to do.
+            afterPauseOpen = null
             false
         }
         else -> app.appRepository.launch(entry)
     }
 
-    // How a pause ends: opened anyway, or let go. Counted on the day it ended either way.
+    // How a pause ends: opened anyway, or let go. Counted on the day it ended. Open counts as
+    // opened only when something did start — an app uninstalled while its pause stood starts
+    // nothing — and an Open that started nothing is counted neither way.
     fun endPause(open: Boolean) {
         val entry = mindfulFor ?: return
+        val after = afterPauseOpen
         mindfulFor = null
+        afterPauseOpen = null
         val day = LocalDate.now().toEpochDay()
-        scope.launch { app.prefs.recordMindful(entry.key, day, opened = open) }
-        if (open) app.appRepository.launch(entry) else closeAppList()
+        val started = open && app.appRepository.launch(entry)
+        if (!open || started) scope.launch { app.prefs.recordMindful(entry.key, day, opened = started) }
+        if (started) after?.invoke()
+        if (!open) closeAppList()
     }
 
     LaunchedEffect(settings.edgeSide) { scrub.syncRestingSide(settings.edgeSide) }
@@ -486,6 +504,7 @@ fun HomeRoute(
                 // homeIntentTick arrives below.
                 Lifecycle.Event.ON_STOP -> {
                     mindfulFor = null
+                    afterPauseOpen = null
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     keepListThroughPause = false
@@ -666,7 +685,10 @@ fun HomeRoute(
                 // Setting the range takes the home screen out of the picture entirely, edit
                 // layout's own controls with it. The band is judged against the wallpaper it
                 // will sit on, not against the chrome it happens to overlap.
-                .graphicsLayer { alpha = homeContentAlpha },
+                .graphicsLayer { alpha = homeContentAlpha }
+                // Under a pause the rows are out of reach of the finger, and this keeps them out
+                // of TalkBack's reach as well, so the pause is all it finds to read or press.
+                .then(if (mindfulFor != null) Modifier.clearAndSetSemantics {} else Modifier),
         ) {
             HomeScreen(
                 stripInsetSide = if (!stripAlwaysVisible) null else settings.edgeSide,
@@ -715,6 +737,28 @@ fun HomeRoute(
                 nowPlayingEnabled = settings.nowPlayingEnabled,
                 nowPlayingHeightDp = settings.nowPlayingHeightDp,
                 onResizeNowPlaying = { scope.launch { app.prefs.setNowPlayingHeightDp(it) } },
+                onOpenNowPlaying = {
+                    // The card is one more way into the player, so a player marked to pause
+                    // pauses here as it does from its own row. Its main-profile row only: the
+                    // listener hears this profile's sessions and no other's.
+                    val playing = NowPlayingBus.state.value?.controller?.packageName
+                    val marked = playing?.let { pkg ->
+                        appsByKey.values.firstOrNull {
+                            it.kind == EntryKind.APP && it.packageName == pkg &&
+                                it.userSerial == 0L && it.key in mindfulApps
+                        }
+                    }
+                    if (marked != null) {
+                        launchEntry(marked)
+                    } else if (!openNowPlayingApp(context)) {
+                        // Said so, rather than leaving a tap that looks ignored.
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.now_playing_open_failed),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                },
                 widgetActions = widgetActions,
                 onLaunch = { launchEntry(it) },
                 // Remove means the same thing to whoever taps it either way: take this off my
@@ -730,7 +774,14 @@ fun HomeRoute(
                         }
                     }
                 },
-                onOpenFolderApp = { launchEntry(it) },
+                onOpenFolderApp = { entry, opened ->
+                    if (launchEntry(entry)) {
+                        opened()
+                    } else if (mindfulFor?.key == entry.key) {
+                        // Waiting behind a pause: done once Open has started it, if it does.
+                        afterPauseOpen = opened
+                    }
+                },
                 onRenameFolder = { folder, name ->
                     scope.launch { app.prefs.upsertFolder(folder.copy(name = name)) }
                 },

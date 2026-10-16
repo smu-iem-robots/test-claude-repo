@@ -46,6 +46,8 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -134,10 +136,15 @@ fun MindfulPause(
         // Takes every touch that misses the card, so nothing underneath can be opened past the
         // pause. A tap out here is not taken as an answer either: the choice is the two
         // buttons, or BACK.
+        //
+        // Named as a pane, which TalkBack announces as it appears, and which as a node of its own
+        // covering the whole window hides from TalkBack what it hides from a finger. Nothing else:
+        // a click action here would offer the very answer a tap is kept from being.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(scrimColor.copy(alpha = SCRIM_ALPHA))
+                .semantics { paneTitle = label }
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         while (true) {

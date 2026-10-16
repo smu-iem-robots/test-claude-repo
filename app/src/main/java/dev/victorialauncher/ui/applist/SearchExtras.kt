@@ -41,8 +41,17 @@ import androidx.compose.ui.unit.sp
 import dev.victorialauncher.R
 import dev.victorialauncher.data.HomeAlignment
 
-/** An answer put into words: [value] shown large and copied, [detail] shown small under it. */
-internal class ShownAnswer(val value: String, val detail: String, val rerolls: Boolean)
+/**
+ * An answer put into words: [value] shown large, [detail] shown small under it. A tap rolls it
+ * again when it [rerolls], and otherwise copies [value] when it [copies]: every figure does, and
+ * the joke a sum by zero gets does not.
+ */
+internal class ShownAnswer(
+    val value: String,
+    val detail: String,
+    val rerolls: Boolean,
+    val copies: Boolean = !rerolls,
+)
 
 /** [this] in words, from the resources, for showing and for copying. */
 @Composable
@@ -51,8 +60,13 @@ internal fun SearchAnswer.shown(): ShownAnswer {
     return when (this) {
         is SearchAnswer.Value ->
             ShownAnswer(value, if (rerolls) "$detail · $again" else detail, rerolls)
-        is SearchAnswer.DividedByZero ->
-            ShownAnswer(stringResource(R.string.search_answer_divided_by_zero), expression, false)
+        // "∞ — nice try" is no figure to put on the clipboard in place of what was there.
+        is SearchAnswer.DividedByZero -> ShownAnswer(
+            stringResource(R.string.search_answer_divided_by_zero),
+            expression,
+            rerolls = false,
+            copies = false,
+        )
         is SearchAnswer.Wind -> {
             val name = stringArrayResource(R.array.search_beaufort_names).getOrElse(force) { "" }
             val scale = "$force Bft · $name"

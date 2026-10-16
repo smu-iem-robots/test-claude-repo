@@ -99,33 +99,45 @@ object ClockWidgetWeather {
         return true
     }
 
-    fun formatted(reading: Reading, fahrenheit: Boolean): String {
+    fun formatted(reading: Reading, fahrenheit: Boolean): String = row(reading, fahrenheit, wind = null)
+
+    /**
+     * Temperature, then [wind] when there is one, then the condition, two spaces apart.
+     *
+     * The condition goes last because it is the part a narrow widget can do without. The row is
+     * one line, cut with an ellipsis where it runs out of room, and the condition is free text
+     * of any length from the sender, where the temperature and the wind are short and are what
+     * the row is read for — the wind most of all just after it has been switched on, when losing
+     * it off the end looked like the setting doing nothing. Without the wind this is exactly the
+     * row from before there was any.
+     */
+    internal fun row(reading: Reading, fahrenheit: Boolean, wind: String?): String {
         val celsius = reading.tempK - 273.15
         val value = if (fahrenheit) celsius * 9 / 5 + 32 else celsius
         val unit = if (fahrenheit) "F" else "C"
         val degrees = String.format(Locale.getDefault(), "%.0f°%s", value, unit)
-        return if (reading.condition.isEmpty()) degrees else "$degrees  ${reading.condition}"
+        return listOfNotNull(degrees, wind, reading.condition.takeIf { it.isNotEmpty() })
+            .joinToString("  ")
     }
 
     /**
-     * The whole row as [config] draws it: temperature and condition, then the wind if it asks for
-     * that and the sender gave one.
+     * The whole row as [config] draws it: see [row], with the wind if it asks for that and the
+     * sender gave one.
      *
      * One function for the widget and for its settings preview, so the preview cannot promise a
-     * row the widget does not draw. The wind goes last, after the same two spaces that set the
-     * condition apart; with the wind off, the row is exactly what it was before there was any.
+     * row the widget does not draw.
      */
     fun line(context: Context, reading: Reading, config: ClockWidgetConfig): String {
-        val weather = formatted(reading, config.weatherFahrenheit)
         val kmh = reading.windKmh
-        if (kmh == null || config.windUnit == WindUnit.OFF) return weather
+        if (kmh == null || config.windUnit == WindUnit.OFF) {
+            return formatted(reading, config.weatherFahrenheit)
+        }
         // Names rather than a fixed "SW", since not every language abbreviates the points alike.
         val compass = runCatching {
             context.resources.getStringArray(R.array.widget_clock_wind_compass).toList()
         }.getOrDefault(emptyList())
         val wind = ClockWidgetWind.formatted(kmh, reading.windDegrees, config.windUnit, compass)
-            ?: return weather
-        return "$weather  $wind"
+        return row(reading, config.weatherFahrenheit, wind)
     }
 
     /** Where Fahrenheit is what people mean by a temperature, so the first draw is not wrong. */

@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -69,6 +70,7 @@ import dev.victorialauncher.ui.common.clearIconCache
 import dev.victorialauncher.ui.common.encodePackOverride
 import dev.victorialauncher.ui.common.evictPackageIcons
 import dev.victorialauncher.ui.common.iconCacheGeneration
+import dev.victorialauncher.ui.common.iconEvictions
 import dev.victorialauncher.ui.common.warmIconCache
 import dev.victorialauncher.ui.home.FavoriteEntry
 import dev.victorialauncher.ui.home.HomeRoute
@@ -195,7 +197,8 @@ fun VictoriaNavHost(
                 // key's components, so nothing else would invalidate the stale bitmap. Only
                 // that app's, where the callback said which: emptying the whole cache for one
                 // republished shortcut is what left the list drawing every icon again (#119).
-                if (packages == null) clearIconCache() else packages.forEach { evictPackageIcons(it) }
+                // What went is drawn again below, and nothing else.
+                if (packages == null) clearIconCache() else evictPackageIcons(packages)
                 reloadApps(state, pass)
             }
         }
@@ -426,6 +429,12 @@ fun VictoriaNavHost(
     // set: that screen lists rows, and a hidden app inside a locked private space has no row.
     // Counting the stored set in the subtitle says out loud how many apps are in there.
     val hiddenShownCount = remember(allApps, hiddenApps) { allApps.count { it.key in hiddenApps } }
+    // The same for the apps that pause, and for the same reasons: the stored keys include a
+    // locked private space's and apps since uninstalled. Counted up here, where the list and the
+    // marks are already held for the whole session, rather than by the settings row itself,
+    // which starts again from nothing every time settings opens and showed "No apps pause"
+    // until a full scan of every installed app came back.
+    val mindfulShownCount = remember(allApps, mindfulApps) { allApps.count { it.key in mindfulApps } }
     val foldersById = remember(folders) { folders.associateBy { it.id } }
 
     // A favorites row is an app or a folder; both come out of the same ordered token list.
@@ -489,11 +498,35 @@ fun VictoriaNavHost(
             foreground = scheme.onPrimaryContainer.toArgb(),
         )
     }
-    // Again after anything is thrown out of the cache, whether or not the list changed with it;
-    // what is still cached is passed over, so only what went is drawn.
+    // Again after the cache is emptied, whether or not the list changed with it.
     val iconGeneration by iconCacheGeneration.collectAsState()
     LaunchedEffect(allApps, iconPackPackage, iconOverrides, listIconPx, priorityKeys, iconStyle, iconGeneration) {
         warmIconCache(context, allApps, iconPackPackage, iconOverrides, listIconPx, iconStyle, priorityKeys)
+    }
+    // A package that changed loses only its own bitmaps, and only those are drawn again here.
+    // Running the whole pass for it instead looked over every icon on each burst of shortcut
+    // republishes, and with more icons than the cache holds, a pass in list order missed on
+    // every one and drew the list again (#119). Started once and handed the settings as they are
+    // now, so a change to them never restarts it and loses a burst.
+    val currentApps by rememberUpdatedState(allApps)
+    val currentIconPack by rememberUpdatedState(iconPackPackage)
+    val currentIconOverrides by rememberUpdatedState(iconOverrides)
+    val currentListIconPx by rememberUpdatedState(listIconPx)
+    val currentIconStyle by rememberUpdatedState(iconStyle)
+    val currentPriorityKeys by rememberUpdatedState(priorityKeys)
+    LaunchedEffect(Unit) {
+        iconEvictions.collect { evicted ->
+            warmIconCache(
+                context,
+                currentApps,
+                currentIconPack,
+                currentIconOverrides,
+                currentListIconPx,
+                currentIconStyle,
+                currentPriorityKeys,
+                only = evicted,
+            )
+        }
     }
 
     // Written through the document picker rather than to a path of our own: the file is the
@@ -735,6 +768,7 @@ fun VictoriaNavHost(
             val listenerEnabled = remember(homeIntentTick) { isListenerEnabled(context) }
             SettingsScreen(
                 hiddenCount = hiddenShownCount,
+                mindfulCount = mindfulShownCount,
                 iconPacks = iconPacks,
                 iconPackPackage = iconPackPackage,
                 showAppIcons = showAppIcons,

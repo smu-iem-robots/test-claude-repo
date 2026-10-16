@@ -35,6 +35,8 @@ internal class ReadNumber(
     val end: Int,
     /** Whether the whole part has a leading zero, as "06" or "020" do, which a sum never has. */
     val zeroPadded: Boolean,
+    /** Whether the fraction was put after a comma, as "2,5" has it. */
+    val decimalComma: Boolean = false,
 )
 
 /**
@@ -62,8 +64,10 @@ internal fun readNumber(text: String, start: Int): ReadNumber? {
         }
     }
     var fraction = ""
+    var decimalComma = false
     val mark = text.getOrNull(i)
     if ((mark == '.' || (mark == ',' && !grouped)) && text.getOrNull(i + 1)?.let { it in '0'..'9' } == true) {
+        decimalComma = mark == ','
         val begin = i + 1
         i = begin
         while (i < text.length && text[i] in '0'..'9') i++
@@ -86,7 +90,7 @@ internal fun readNumber(text: String, start: Int): ReadNumber? {
         (if (fraction.isEmpty()) "" else ".$fraction") + exponent
     val value = literal.toDoubleOrNull() ?: return null
     if (value.isNaN() || value.isInfinite()) return null
-    return ReadNumber(value, i, zeroPadded = whole.length > 1 && whole[0] == '0')
+    return ReadNumber(value, i, zeroPadded = whole.length > 1 && whole[0] == '0', decimalComma = decimalComma)
 }
 
 private fun isThousandsGroup(text: String, from: Int): Boolean {
@@ -98,6 +102,25 @@ private fun isThousandsGroup(text: String, from: Int): Boolean {
 /** [text] as one number and nothing else, or null. */
 internal fun wholeNumber(text: String): Double? =
     readNumber(text, 0)?.takeIf { it.end == text.length }?.value
+
+/**
+ * Whether any number in [text] has its fraction after a comma, as "2,5 bar" does, read the way
+ * the calculator reads them. Grouping, as in "1,500", is not a decimal comma.
+ */
+internal fun typedDecimalComma(text: String): Boolean {
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        val number = if (c in '0'..'9') readNumber(text, i) else null
+        if (number == null) {
+            i++
+        } else {
+            if (number.decimalComma) return true
+            i = number.end
+        }
+    }
+    return false
+}
 
 /**
  * [value] to [significant] digits, with no trailing zeros, and in scientific notation once it is
@@ -122,6 +145,14 @@ internal fun formatNumber(value: Double, significant: Int): String {
 
 private val SCIENTIFIC_ABOVE = BigDecimal("1E15")
 private val SCIENTIFIC_BELOW = BigDecimal("1E-6")
+
+/**
+ * A sum's answer: 10 significant digits, but every whole digit from 1E10 on. Rounded to 10 there,
+ * 2^40 came out as 1099511628000, which reads as exact and is not; a double holds about 16
+ * digits, so 15 keep all of them below 1E15 and still drop the noise of the last bit.
+ */
+internal fun formatAnswer(value: Double): String =
+    formatNumber(value, if (abs(value) >= 1e10) 15 else 10)
 
 /** [value] with exactly [decimals] places, for figures read as a fixed format, like 1.44 t. */
 internal fun formatFixed(value: Double, decimals: Int): String {

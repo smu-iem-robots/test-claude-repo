@@ -36,6 +36,20 @@ class SearchUnitsTest {
         assertEquals(listOf(value("-40 °F", "-40 °C")), conversions("-40 °C in °F"))
         assertEquals(listOf(value("37.7778 °C", "100 °F")), conversions("100 F to C"))
         assertEquals(listOf(value("-273.15 °C", "0 K")), conversions("0 K to C"))
+        assertEquals(listOf(value("26.85 °C", "300 K")), conversions("300 kelvin to C"))
+    }
+
+    @Test
+    fun `a lowercase k is thousands or a resolution, not kelvin`() {
+        listOf("4k", "5k", "10k", "10 k to c").forEach { assertTrue(it, conversions(it).isEmpty()) }
+    }
+
+    @Test
+    fun `NM is the nautical mile a chart writes`() {
+        assertEquals(
+            listOf(value("18.52 km", "10 nmi"), value("11.5078 mi", "10 nmi")),
+            conversions("10 NM"),
+        )
     }
 
     @Test
@@ -143,6 +157,11 @@ class SearchUnitsTest {
         assertEquals("MPa", unitNamed("mpa")?.symbol)
         assertEquals("°C", unitNamed("c")?.symbol)
         assertEquals("N·m", unitNamed("nm")?.symbol)
+        assertEquals("N·m", unitNamed("Nm")?.symbol)
+        assertEquals("nmi", unitNamed("NM")?.symbol)
+        assertNull(unitNamed("nM"))
+        assertEquals("K", unitNamed("K")?.symbol)
+        assertNull(unitNamed("k"))
         assertEquals("L", unitNamed("l")?.symbol)
         assertEquals("t", unitNamed("T")?.symbol)
     }
@@ -150,7 +169,7 @@ class SearchUnitsTest {
     @Test
     fun `every spelling the search promises is a unit`() {
         listOf(
-            "mm", "cm", "m", "km", "in", "inch", "\"", "ft", "'", "yd", "mi", "nmi",
+            "mm", "cm", "m", "km", "in", "inch", "\"", "ft", "'", "yd", "mi", "nmi", "NM",
             "g", "kg", "t", "tonne", "lb", "lbs", "oz",
             "°C", "C", "°F", "F", "K",
             "m/s", "km/h", "kmh", "kph", "kn", "kt", "knots", "mph", "bft",

@@ -33,7 +33,8 @@ private val INCH = MeasureUnit("in", Quantity.LENGTH, 0.0254, aliases = listOf("
 private val FOOT = MeasureUnit("ft", Quantity.LENGTH, 0.3048, aliases = listOf("foot", "feet", "'", "′", "’"))
 private val YARD = MeasureUnit("yd", Quantity.LENGTH, 0.9144, aliases = listOf("yard", "yards"))
 private val MILE = MeasureUnit("mi", Quantity.LENGTH, 1609.344, aliases = listOf("mile", "miles"))
-private val NAUTICAL_MILE = MeasureUnit("nmi", Quantity.LENGTH, 1852.0)
+// "NM" as well, as sea charts and aviation write it; "nm" and "Nm" stay the newton metre.
+private val NAUTICAL_MILE = MeasureUnit("nmi", Quantity.LENGTH, 1852.0, aliases = listOf("NM"))
 
 private val GRAM = MeasureUnit("g", Quantity.MASS, 0.001, aliases = listOf("gram", "grams"))
 private val KILOGRAM = MeasureUnit("kg", Quantity.MASS, 1.0, aliases = listOf("kilo", "kilos", "kilogram", "kilograms"))
@@ -72,7 +73,7 @@ private val KILOGRAM_FORCE = MeasureUnit("kgf", Quantity.FORCE, 9.80665)
 private val TONNE_FORCE = MeasureUnit("tf", Quantity.FORCE, 9806.65)
 private val POUND_FORCE = MeasureUnit("lbf", Quantity.FORCE, 4.4482216152605)
 
-private val NEWTON_METRE = MeasureUnit("N·m", Quantity.TORQUE, 1.0, aliases = listOf("Nm", "N.m", "N-m"))
+private val NEWTON_METRE = MeasureUnit("N·m", Quantity.TORQUE, 1.0, aliases = listOf("Nm", "nm", "N.m", "N-m"))
 private val KILONEWTON_METRE = MeasureUnit("kN·m", Quantity.TORQUE, 1e3, aliases = listOf("kNm", "KNm", "kN.m", "kN-m"))
 private val POUND_FOOT = MeasureUnit(
     "lbf·ft", Quantity.TORQUE, 1.3558179483314004,
@@ -110,14 +111,18 @@ private val EXACT_UNITS: Map<String, MeasureUnit> = buildMap {
 
 /*
  * Case only matters where it tells two units apart: kN is a kilonewton and kn a knot, so "Kn" is
- * neither. Everywhere else a capital typed by the keyboard's own habit is ignored, and "M" is the
- * metre it would be in lower case.
+ * neither, and likewise NM a nautical mile and nm a newton metre. Everywhere else a capital typed
+ * by the keyboard's own habit is ignored, and "M" is the metre it would be in lower case.
+ *
+ * Except kelvin's K, which is never lowered: a lowercase k after a figure is thousands, as in
+ * "10k", or a resolution, as in "4k", and answering either at -263.15 °C is no help to anyone.
  */
 private val FOLDED_UNITS: Map<String, MeasureUnit> = UNITS
     .flatMap { unit -> unit.spellings().map { it.lowercase() to unit } }
     .groupBy({ it.first }, { it.second })
     .filterValues { units -> units.distinct().size == 1 }
     .mapValues { (_, units) -> units.first() }
+    .filterKeys { it != "k" }
 
 /** The unit [name] spells, or null for a word that is not one or could be either of two. */
 internal fun unitNamed(name: String): MeasureUnit? = EXACT_UNITS[name] ?: FOLDED_UNITS[name.lowercase()]

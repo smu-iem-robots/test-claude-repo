@@ -377,11 +377,18 @@ fun AppListScreen(
                 SearchResult(near, soleMatch = null, guessed = near.rows.isNotEmpty())
             } else {
                 // Never on the package name alone, which is a guess at an app rather than its
-                // name, and opening it unasked would be acting on the guess. Nor the private
-                // space's padlock, which locks or unlocks rather than opens anything.
+                // name, and opening it unasked would be acting on the guess. Nor on the initials
+                // alone, a guess at a name as much as the package is a guess at an app: "kn" on
+                // the way to "knitting" is Keep Notes' initials and nobody's intention. Nor the
+                // private space's padlock, which locks or unlocks rather than opens anything.
+                //
+                // And only for a query that starts with a letter. One that starts with a figure
+                // is a sum, a conversion, a time or a number to dial far more often than an app,
+                // and its first two figures, "20" of "20 C to F", are all of 2048 as well. Go
+                // still opens an app like that.
                 val sole = entries.singleOrNull()?.app?.takeIf { app ->
-                    typed.length >= 2 && rankOf(app) != RANK_PACKAGE && !app.disabled &&
-                        (app.kind == EntryKind.APP || app.kind == EntryKind.SHORTCUT)
+                    typed.length >= 2 && typed.first().isLetter() && rankOf(app) <= RANK_INSIDE &&
+                        !app.disabled && (app.kind == EntryKind.APP || app.kind == EntryKind.SHORTCUT)
                 }
                 SearchResult(found.rankedBy { rankOf(it) }, sole)
             }
@@ -413,7 +420,10 @@ fun AppListScreen(
     }
 
     fun tapAnswer(answer: ShownAnswer) {
-        if (answer.rerolls) rollTick += 1 else copySearchAnswer(context, answer.value)
+        when {
+            answer.rerolls -> rollTick += 1
+            answer.copies -> copySearchAnswer(context, answer.value)
+        }
     }
 
     // Opened the moment a query leaves one app and nothing else, and once for that query: typing
@@ -764,7 +774,15 @@ fun AppListScreen(
         if (scrubRowIndex < 0) return@LaunchedEffect
         // The next letter's header ends this section. Walking the rows to find it copied the
         // whole tail of the list on every one of the ~26 letter changes in a gesture.
-        val end = displayModel.letterIndex.firstOrNull { it.second > scrubRowIndex }?.second ?: displayModel.rows.size
+        // After the last letter, the sections and the padlock that follow the alphabet: they are
+        // filed under no letter, and lit with the last one they stayed bright while it was scrubbed.
+        val end = displayModel.letterIndex.firstOrNull { it.second > scrubRowIndex }?.second
+            ?: (scrubRowIndex + 1 until displayModel.rows.size).firstOrNull { i ->
+                val row = displayModel.rows[i]
+                row is AppListRow.Header ||
+                    (row is AppListRow.Entry && (row.section != null || listedLast(row.app.kind)))
+            }
+            ?: displayModel.rows.size
 
         // Room before the scroll, and a frame for it to land in. The scroll clamps against the
         // range as it stands when it runs, so asking for the room afterwards leaves the letter
@@ -1151,15 +1169,27 @@ fun AppListScreen(
     // With no app to launch, Go takes the next thing on screen instead, in the order each is
     // worth a key press: an action, then an answer to copy, then the web search.
     //
+    // An app that is only a typo guess comes after the action and the answer: those are what was
+    // typed, exactly, and the guess is a guess. "coin" is a letter away from the start of
+    // Contacts, and Go on it opened Contacts rather than flip. A guess still comes before the
+    // web search, since forgiving "mpas" is what guessing is for.
+    //
     // An answer gets what a tap on it gets, so a coin or the dice roll again rather than put
-    // "Heads" on the clipboard: Go after "flip" is asking for another flip.
+    // "Heads" on the clipboard: Go after "flip" is asking for another flip. But a yes-or-no
+    // question put to the 8-Ball, "will it snow tomorrow?", is as likely a question for the web,
+    // and goes there when the web search is on; "8ball" itself asked for the toy. And an answer
+    // with nothing to copy, the joke a sum by zero gets, is passed over.
     fun launchTopResult() {
         if (!searching) return
         val top = displayModel.rows.filterIsInstance<AppListRow.Entry>().firstOrNull()
+        val questionForWeb = webSearchFallback && query.trim().endsWith('?') &&
+            answers.firstOrNull() is SearchAnswer.EightBall
+        val answer = if (questionForWeb) null else shownAnswers.firstOrNull { it.rerolls || it.copies }
         when {
-            top != null -> onLaunch(top.app)
+            top != null && !searchResult.guessed -> onLaunch(top.app)
             actions.isNotEmpty() -> runAction(actions.first())
-            shownAnswers.isNotEmpty() -> tapAnswer(shownAnswers.first())
+            answer != null -> tapAnswer(answer)
+            top != null -> onLaunch(top.app)
             webSearchFallback -> onWebSearch(query.trim())
         }
     }

@@ -4,7 +4,6 @@ package dev.victorialauncher.ui.settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -13,9 +12,7 @@ import dev.victorialauncher.R
 import dev.victorialauncher.VictoriaApp
 import dev.victorialauncher.data.DEFAULT_MINDFUL_SECONDS
 import dev.victorialauncher.data.MINDFUL_SECONDS_RANGE
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /**
@@ -24,27 +21,23 @@ import kotlin.math.roundToInt
  *
  * Double-tapping the wallpaper to lock is here as well. It is no part of the pause, but it is a
  * row that reads and writes its own value, which is all this file is for.
+ *
+ * [pausingCount] is how many of the apps that can be listed right now pause, counted by
+ * VictoriaNavHost as the hidden-apps row's number is: not the stored keys, which include a locked
+ * private space's apps, which a number on this screen would give away, and apps since
+ * uninstalled, which the picker no longer shows.
  */
 @Composable
-internal fun mindfulSettingsEntries(onOpenRoute: (String) -> Unit): List<SettingsEntry> {
+internal fun mindfulSettingsEntries(
+    onOpenRoute: (String) -> Unit,
+    pausingCount: Int,
+): List<SettingsEntry> {
     val app = LocalContext.current.applicationContext as VictoriaApp
     val scope = rememberCoroutineScope()
-    val mindfulApps by app.prefs.mindfulApps.collectAsState(initial = emptySet())
-    val mindfulSeconds by app.prefs.mindfulSeconds.collectAsState(initial = DEFAULT_MINDFUL_SECONDS)
+    // Null until the stored length arrives, and the slider waits for it: with the count now
+    // known from the first frame, a default standing in for it would show 5s and then jump.
+    val mindfulSeconds by app.prefs.mindfulSeconds.collectAsState(initial = null)
     val doubleTapHomeLock by app.prefs.doubleTapHomeLock.collectAsState(initial = false)
-    // Counted against what can be listed right now, as the hidden-apps row is, rather than the
-    // stored keys: those include a locked private space's apps, which a number on this screen
-    // would give away, and apps since uninstalled, which the picker no longer shows.
-    val pausingCount by produceState(initialValue = 0, mindfulApps) {
-        val keys = mindfulApps
-        value = if (keys.isEmpty()) {
-            0
-        } else {
-            withContext(Dispatchers.Default) {
-                runCatching { app.appRepository.queryAllApps().count { it.key in keys } }.getOrDefault(0)
-            }
-        }
-    }
 
     return listOf(
         SettingsEntry(
@@ -65,13 +58,14 @@ internal fun mindfulSettingsEntries(onOpenRoute: (String) -> Unit): List<Setting
             SettingsSection.APPS, stringResource(R.string.settings_mindful_seconds),
             "pause wait delay mindful countdown seconds",
             // Only once there is something for it to time.
-            visible = pausingCount > 0,
+            visible = pausingCount > 0 && mindfulSeconds != null,
         ) {
+            val seconds = mindfulSeconds ?: DEFAULT_MINDFUL_SECONDS
             SliderRow(
                 label = stringResource(R.string.settings_mindful_seconds),
-                value = mindfulSeconds.toFloat(),
+                value = seconds.toFloat(),
                 range = MINDFUL_SECONDS_RANGE.first.toFloat()..MINDFUL_SECONDS_RANGE.last.toFloat(),
-                valueLabel = "${mindfulSeconds}s",
+                valueLabel = "${seconds}s",
                 onValueChange = { scope.launch { app.prefs.setMindfulSeconds(it.roundToInt()) } },
             )
         },

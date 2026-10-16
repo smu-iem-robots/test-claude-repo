@@ -81,18 +81,38 @@ internal fun phoneNumber(text: String): String? {
     if (digits !in 3..15) return null
     if (t.last() !in '0'..'9') return null
     if (DOUBLED_SEPARATOR.containsMatchIn(t)) return null
+    // An area code is bracketed as digits alone, (020) or (0); a bracket around anything else, or
+    // one divided by something, is a sum, as (100-20)/2 is.
+    if (BRACKETED_SUM.containsMatchIn(t)) return null
     val opensLikeANumber = t[0] == '+' || t[0] == '(' || t[0] == '0'
     if (separators == 0) {
         if (!(t[0] == '+' || digits == 3 || digits >= 5)) return null
     } else {
-        // A single point between digits is a decimal number, not a number to dial.
+        // A single point between digits is a decimal number, not a number to dial; and so is a
+        // point after a lone 0 or beside a minus, as in 0.75-0.25 or 125.75-33.25, which are sums.
         if (dots == 1 && separators == 1) return null
+        if (dots > 0 && ('-' in t || DECIMAL_FROM_ZERO.containsMatchIn(t))) return null
+        // A router's address, as 192.168.178.1 is. No address in use starts with a 0, so a number
+        // dotted into four groups from a 0, as 02.123.45.67 is in Brussels, is still dialled.
+        if (t[0] != '0' && IPV4_SHAPE.matches(t)) return null
+        // Without a +, a 0 or a bracket in front, a number is written in short groups, as
+        // 555-123-4567 is; a run of five figures or more beside a separator is a sum, as
+        // 100000 - 2500 and 1200000/12 are.
+        if (!opensLikeANumber && LONG_RUN.containsMatchIn(t)) return null
         if (!(opensLikeANumber && digits >= 6) && digits < 9) return null
     }
     return dial.toString()
 }
 
 private val DOUBLED_SEPARATOR = Regex("[-./]{2}")
+
+private val DECIMAL_FROM_ZERO = Regex("(?:^|[^0-9])0\\.[0-9]")
+
+private val BRACKETED_SUM = Regex("\\([^)]*[^0-9 )]|\\)\\s*/")
+
+private val IPV4_SHAPE = Regex("^[0-9]{1,3}(?:\\.[0-9]{1,3}){3}$")
+
+private val LONG_RUN = Regex("[0-9]{5,}")
 
 // ---- E-mail ----
 
@@ -113,6 +133,12 @@ private val GENERIC_TLDS = setOf(
     "cloud", "news", "wiki", "live", "life", "world", "today", "top", "club", "art", "design",
     "studio", "media", "email", "energy", "travel", "museum", "aero", "asia", "eus", "cat",
 )
+
+/**
+ * The domains a package name starts from, as com.google.android.gm does. Only these: news, app,
+ * shop or blog lead a site's address as often as not, as in news.ycombinator.com.
+ */
+private val PACKAGE_ROOTS = setOf("com", "org", "net", "edu", "gov", "mil", "int", "io", "biz")
 
 private val HOST_LABEL = Regex("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
@@ -139,7 +165,7 @@ internal fun webAddress(text: String): Pair<String, String>? {
     if (tld.any { it !in 'a'..'z' }) return null
     if (tld.length != 2 && tld !in GENERIC_TLDS) return null
     // com.google.android.gm is a package name, which search also finds apps by, and not a site.
-    if (labels.size >= 3 && labels.first() in GENERIC_TLDS) return null
+    if (labels.size >= 3 && labels.first() in PACKAGE_ROOTS) return null
     return host to (if (schemed) t else "https://$t")
 }
 

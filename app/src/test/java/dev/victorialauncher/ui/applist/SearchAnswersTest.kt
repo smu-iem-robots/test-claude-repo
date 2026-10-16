@@ -222,6 +222,35 @@ class SearchAnswersTest {
     }
 
     @Test
+    fun `a sum with brackets or long figures is worked out, not dialled`() {
+        assertEquals(listOf(SearchAnswer.Value("40", "(100-20)/2")), searchAnswers("(100-20)/2", Random(1)))
+        assertEquals(listOf(SearchAnswer.Value("97500", "100000 - 2500")), searchAnswers("100000 - 2500", Random(1)))
+    }
+
+    @Test
+    fun `an answer is every whole digit of the sum, not ten of them padded with zeros`() {
+        assertEquals(listOf(SearchAnswer.Value("1099511627776", "2^40")), searchAnswers("2^40", Random(1)))
+    }
+
+    @Test
+    fun `a query written with a decimal comma is answered with one`() {
+        val random = Random(1)
+        assertEquals(listOf(SearchAnswer.Value("4,5", "1,5*3")), searchAnswers("1,5*3", random))
+        assertEquals(
+            listOf(SearchAnswer.Value("36,2594 psi", "2,5 bar"), SearchAnswer.Value("250 kPa", "2,5 bar")),
+            searchAnswers("2,5 bar", random),
+        )
+        assertEquals(
+            listOf(SearchAnswer.Value("34,2 km/h", "9,5 m/s"), SearchAnswer.Wind(5, "9,5 m/s", onScale = true)),
+            searchAnswers("9,5 m/s", random),
+        )
+        assertEquals(listOf(weight("11,78 kg/m²", "1,5 mm · 7850 kg/m³")), searchAnswers("plate 1,5", random))
+        // A point, or a comma that groups thousands, is answered with a point as before.
+        assertEquals(listOf(SearchAnswer.Value("4.5", "1.5*3")), searchAnswers("1.5*3", random))
+        assertEquals(listOf(SearchAnswer.Value("0.5", "1,500/3000")), searchAnswers("1,500/3000", random))
+    }
+
+    @Test
     fun `most queries are answered by nothing at all`() {
         listOf("Spotify", "g", "maps", "2048", "", "settings", "e", "pi").forEach {
             assertTrue(it, searchAnswers(it, Random(1)).isEmpty())

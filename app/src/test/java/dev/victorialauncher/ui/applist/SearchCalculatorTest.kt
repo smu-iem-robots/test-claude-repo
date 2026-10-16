@@ -2,7 +2,9 @@
 package dev.victorialauncher.ui.applist
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -12,7 +14,7 @@ import org.junit.Test
 class SearchCalculatorTest {
 
     private fun answer(text: String): String? = when (val result = calculate(text)) {
-        is Calculation.Result -> formatNumber(result.value, 10)
+        is Calculation.Result -> formatAnswer(result.value)
         Calculation.DividedByZero -> "divided by zero"
         null -> null
     }
@@ -131,6 +133,16 @@ class SearchCalculatorTest {
     }
 
     @Test
+    fun `large answers keep every whole digit rather than ten and zeros`() {
+        assertEquals("1099511627776", answer("2^40"))
+        assertEquals("17179869184", answer("2^34"))
+        assertEquals("80779853376", answer("123456*654321"))
+        assertEquals("12222222111", answer("123456789*99"))
+        assertEquals("12345678902", answer("12345678901+1"))
+        assertEquals("33333333333.3333", answer("1e11/3"))
+    }
+
+    @Test
     fun `dividing by zero is answered rather than ignored`() {
         assertEquals(Calculation.DividedByZero, calculate("1/0"))
         assertEquals(Calculation.DividedByZero, calculate("0/0"))
@@ -182,6 +194,20 @@ class SearchCalculatorTest {
         assertNull(wholeNumber("1,000,5"))
         assertNull(wholeNumber("1e999999"))
         assertNull(wholeNumber(""))
+    }
+
+    @Test
+    fun `a decimal comma is told from a point and from grouping`() {
+        assertTrue(readNumber("2,5", 0)!!.decimalComma)
+        assertFalse(readNumber("2.5", 0)!!.decimalComma)
+        assertFalse(readNumber("1,500", 0)!!.decimalComma)
+        assertTrue(typedDecimalComma("2,5 bar"))
+        assertTrue(typedDecimalComma("1.5+2,25"))
+        assertTrue(typedDecimalComma("plate 2000x1000x1,5"))
+        assertFalse(typedDecimalComma("1,500 kg"))
+        assertFalse(typedDecimalComma("1,234.5+1"))
+        assertFalse(typedDecimalComma("plate 2000x1000x20"))
+        assertFalse(typedDecimalComma("Spotify"))
     }
 
     @Test

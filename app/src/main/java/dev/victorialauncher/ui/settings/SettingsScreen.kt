@@ -109,6 +109,8 @@ import dev.victorialauncher.ui.theme.SHADOW_STRENGTH_RANGE
 @Composable
 fun SettingsScreen(
     hiddenCount: Int,
+    /** How many of the listed apps pause before opening, for the row in [extraSettingsEntries]. */
+    mindfulCount: Int,
     iconPacks: List<IconPackRepository.IconPackInfo>,
     iconPackPackage: String?,
     previewApp: AppInfo?,
@@ -886,7 +888,7 @@ fun SettingsScreen(
         },
         // Rows that read and write their own settings rather than arriving as parameters; see
         // ExtraSettings.kt for why.
-    ) + extraSettingsEntries(onOpenRoute)).filter { it.visible }
+    ) + extraSettingsEntries(onOpenRoute, mindfulCount)).filter { it.visible }
 
     // What the list below actually draws: the matches while something is typed, the open
     // section otherwise, and nothing at all on the top menu.

@@ -42,10 +42,17 @@ internal const val NO_TYPO_MATCH = Int.MAX_VALUE
  * what is dropped. The handful of Latin letters Unicode keeps whole are spelled out by hand
  * afterwards, since no decomposition reaches the letter underneath: without that, "lodz" could
  * never find Łódź however it was typed.
+ *
+ * The first letter typed after the list changes folds every app's name several times over, in
+ * the frame that shows that letter. So plain ASCII, which most names are, is only lower-cased:
+ * it has nothing to decompose, no mark to drop and none of those letters, so the answer is the
+ * same. And the marks are dropped by a loop rather than a Regex, which on Android builds a
+ * native matcher for every call.
  */
 internal fun foldForSearch(text: String): String {
+    if (text.all { it.code < 0x80 }) return text.lowercase()
     val decomposed = Normalizer.normalize(text, Normalizer.Form.NFD)
-    val lower = COMBINING_MARKS.replace(decomposed, "").lowercase()
+    val lower = withoutCombiningMarks(decomposed).lowercase()
     if (lower.none { it in UNDECOMPOSED }) return lower
     return buildString(lower.length + 4) {
         lower.forEach { c ->
@@ -55,7 +62,21 @@ internal fun foldForSearch(text: String): String {
     }
 }
 
-private val COMBINING_MARKS = Regex("\\p{Mn}+")
+/**
+ * [text] without its non-spacing marks, the category an accent decomposes into. Read by code
+ * point, not by char, so a mark outside the Basic Multilingual Plane goes too, as it did when a
+ * Regex matched them.
+ */
+private fun withoutCombiningMarks(text: String): String {
+    val kept = StringBuilder(text.length)
+    var i = 0
+    while (i < text.length) {
+        val codePoint = text.codePointAt(i)
+        if (Character.getType(codePoint) != Character.NON_SPACING_MARK.toInt()) kept.appendCodePoint(codePoint)
+        i += Character.charCount(codePoint)
+    }
+    return kept.toString()
+}
 
 private val UNDECOMPOSED = mapOf(
     'ø' to "o", 'ł' to "l", 'đ' to "d", 'ð' to "d", 'þ' to "th", 'æ' to "ae",

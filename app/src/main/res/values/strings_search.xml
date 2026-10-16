@@ -76,5 +76,5 @@
     <string name="settings_search_typos">Forgive typos</string>
     <string name="settings_search_typos_detail">When nothing matches, show the apps a letter or two away from what you typed. Needs the search bar</string>
     <string name="settings_search_open_only">Open the only match</string>
-    <string name="settings_search_open_only_detail">Opens an app the moment what you type matches it and nothing else. Needs the search bar</string>
+    <string name="settings_search_open_only_detail">Opens an app the moment what you type matches its name and nothing else. A search that starts with a number waits for Go. Needs the search bar</string>
 </resources>

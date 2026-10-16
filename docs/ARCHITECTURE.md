@@ -95,7 +95,7 @@ The app requests **no `INTERNET` permission**. It cannot phone home.
 | `VIBRATE` | The haptic tick as the finger crosses a letter. Respects the system touch-feedback setting, and can be turned off in Settings. | No |
 | `REQUEST_DELETE_PACKAGES` | Uninstall in the long-press menu hands the app to the system's own confirmation. A normal permission, granted at install; without it Android 9+ closes that confirmation unshown for an app targeting 9+. | No |
 | Accessibility service | The only sanctioned way to open the notification shade or lock the screen — neither has a public API. The service ignores every event it receives and reads nothing. | Yes — the swipe-down and double-tap-to-lock gestures simply report that they need it |
-| Notification listener | Reads the active media session for the Now Playing card and counts notifications for the badges. Only while the notification line is turned on does it take anything more from a notification: who each app's newest one is from, and what it says only when the line is set to show that too. Nothing at all from a notification its app marks secret. Held in memory only, never stored or logged. | Yes — off by default |
+| Notification listener | Reads the active media session for the Now Playing card and counts notifications for the badges. Only while the notification line is turned on does it take anything more from a notification: who each app's newest one is from, which only a message, an email or a call says, and what it says only when the line is set to show that too. Nothing at all from a notification its app marks secret, or from one the shade is hiding because its app is paused or Do Not Disturb keeps it off the list. Each line stays with the profile that posted it. Held in memory only, never stored or logged. | Yes — off by default |
 
 `BIND_APPWIDGET` is **not** requested: it is signature-level and is never granted to
 an ordinary app. `AppWidgetHost` and `bindAppWidgetIdIfAllowed` work without it for
@@ -105,7 +105,9 @@ whichever app is the current Home.
 
 - Pause before opening stands only in front of what is opened from Victoria itself. An
   app's own shortcuts, from the sideways swipe on its row, open without it, and so does
-  anything started from outside the launcher. It is a speed bump, not a lock.
+  anything started from outside the launcher. A web search, or a link, call, text, email,
+  timer or alarm typed into search, goes to whichever app handles it, with no pause. It is a
+  speed bump, not a lock.
 - No Baseline Profile. Generating one needs a device or emulator; it is the largest
   remaining first-launch win.
 - Unit tests cover only framework-free logic. Anything touching `PackageManager`,

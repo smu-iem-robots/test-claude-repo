@@ -10,7 +10,7 @@ import kotlin.random.Random
  * Words are not spelled out here: the parts of an answer that are prose — a coin's side, a
  * Beaufort force's name — are carried as which one it is, and the screen puts them into words
  * from its resources. What is spelled out is numbers and unit symbols, which read the same in any
- * language.
+ * language but for the decimal mark, and that follows the query's: "2,5 bar" is answered in commas.
  */
 internal sealed interface SearchAnswer {
     /** Rolled again by a tap rather than copied, since the roll is the whole of what it is for. */
@@ -71,14 +71,39 @@ internal fun searchAnswers(text: String, random: Random): List<SearchAnswer> =
 private fun answersFor(input: String, random: Random): List<SearchAnswer> {
     if (input.isEmpty() || input.length > MAX_ANSWER_INPUT) return emptyList()
     funAnswer(input, random)?.let { return listOf(it) }
-    steelWeight(input)?.let { return listOf(it) }
-    conversions(input).takeIf { it.isNotEmpty() }?.let { return it.take(2) }
+    // "2,5 bar" is answered "36,2594 psi": whoever writes a decimal comma reads one, and the
+    // answer is what gets copied into their spreadsheet, where 36.2594 is a date or text.
+    val comma = typedDecimalComma(input)
+    steelWeight(input)?.let { return listOf(it.withDecimalComma(comma, detailToo = true)) }
+    conversions(input).takeIf { it.isNotEmpty() }?.let { found ->
+        return found.take(2).map { it.withDecimalComma(comma, detailToo = true) }
+    }
     // 123-456-789 is a phone number before it is a subtraction, and the screen offers to call it.
     if (phoneNumber(input) != null) return emptyList()
     return when (val result = calculate(input)) {
-        is Calculation.Result -> listOf(SearchAnswer.Value(formatNumber(result.value, 10), input))
+        // The detail is the sum as typed, which is already written the way its writer writes.
+        is Calculation.Result -> listOf(
+            SearchAnswer.Value(formatAnswer(result.value), input).withDecimalComma(comma, detailToo = false),
+        )
         Calculation.DividedByZero -> listOf(SearchAnswer.DividedByZero(input))
         null -> emptyList()
+    }
+}
+
+/**
+ * [this] with its figures' decimal points made commas when [comma], in the detail as well when
+ * [detailToo] because the detail was written here rather than typed. Unit symbols are spelled
+ * with '·' rather than a point, so a point is only ever a figure's.
+ */
+private fun SearchAnswer.withDecimalComma(comma: Boolean, detailToo: Boolean): SearchAnswer {
+    if (!comma) return this
+    return when (this) {
+        is SearchAnswer.Value -> copy(
+            value = value.replace('.', ','),
+            detail = if (detailToo) detail.replace('.', ',') else detail,
+        )
+        is SearchAnswer.Wind -> copy(speed = speed.replace('.', ','))
+        else -> this
     }
 }
 

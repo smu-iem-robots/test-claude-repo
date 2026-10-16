@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.AlarmClock
 import android.widget.Toast
 import dev.victorialauncher.R
@@ -23,7 +24,8 @@ internal fun SearchAction.intent(): Intent {
     val intent = when (this) {
         is SearchAction.Call -> Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", dial, null))
         is SearchAction.Text -> Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", dial, null))
-        is SearchAction.OpenLink -> Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        // Android matches schemes case-sensitively, so "HTTP://…" as typed would find no browser.
+        is SearchAction.OpenLink -> Intent(Intent.ACTION_VIEW, Uri.parse(url).normalizeScheme())
         is SearchAction.Email -> Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", address, null))
         is SearchAction.Timer -> Intent(AlarmClock.ACTION_SET_TIMER)
             .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
@@ -45,9 +47,14 @@ internal fun startSearchAction(context: Context, action: SearchAction): Boolean 
     return started
 }
 
-/** Puts an answer on the clipboard, and says so. */
+/**
+ * Puts an answer on the clipboard, and says so. From Android 13 the system shows its own
+ * confirmation of every copy, and a toast on top of it would say the same thing twice.
+ */
 internal fun copySearchAnswer(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
     val copied = runCatching { clipboard.setPrimaryClip(ClipData.newPlainText(text, text)) }.isSuccess
-    if (copied) Toast.makeText(context, R.string.search_answer_copied, Toast.LENGTH_SHORT).show()
+    if (copied && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        Toast.makeText(context, R.string.search_answer_copied, Toast.LENGTH_SHORT).show()
+    }
 }

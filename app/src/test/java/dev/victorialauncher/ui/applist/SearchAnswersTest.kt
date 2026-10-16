@@ -88,6 +88,14 @@ class SearchAnswersTest {
     }
 
     @Test
+    fun `a pressure in bar is a pressure, not a round bar`() {
+        assertNull(steelWeight("5 bar"))
+        assertNull(steelWeight("50x1000 bar"))
+        assertEquals(conversions("1 bar"), searchAnswers("1 bar", Random(1)))
+        assertEquals(2, searchAnswers("5 bar", Random(1)).size)
+    }
+
+    @Test
     fun `weights read in kilograms up to a tonne and in tonnes from there`() {
         assertEquals("314 kg", formatWeight(314.0))
         assertEquals("0.785 kg", formatWeight(0.785))

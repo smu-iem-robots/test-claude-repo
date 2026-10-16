@@ -123,7 +123,10 @@ internal fun steelWeight(text: String): SearchAnswer.Value? {
         val size = wholeNumber(word.removeSuffix("mm"))
         when {
             size != null -> {
-                if (size <= 0.0) return null
+                // The shape first, as a cutting list writes it. "Bar" is a unit of pressure
+                // too, and with the shape allowed anywhere "5 bar" came back as the weight of
+                // a 5 mm rod instead of in psi.
+                if (section == null || size <= 0.0) return null
                 sizes += size
             }
             word in SECTION_WORDS -> {

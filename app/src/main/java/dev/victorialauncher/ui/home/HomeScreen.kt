@@ -619,8 +619,9 @@ fun HomeScreen(
         val key = folderToken(folderId)
         val offsetAtStart = offsetY.value
         // Finished once its foot has stayed put for a few frames, rather than after however long
-        // the expansion is supposed to take: that holds whatever the animation is, at whatever
-        // speed the system runs animations, and with a centered stack still settling around it.
+        // the expansion is supposed to take: that holds whatever the animation is, with a
+        // centered stack still settling around it, and at the system's animation speed unless
+        // that is slowed so far that the timeout below comes first.
         val startedNanos = withFrameNanos { it }
         var lastBottom = Float.NaN
         var steadyFrames = 0

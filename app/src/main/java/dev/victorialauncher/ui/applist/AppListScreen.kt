@@ -1394,8 +1394,13 @@ fun AppListScreen(
             // likeliest to land a slip or two from some app's name, so forgiving typos had taken
             // the row away from exactly the queries it is for. After the rows rather than ahead
             // of them, so their places in the list stay their places in the model.
+            //
+            // A key of its own rather than the leading row's. The list holds on to its first
+            // visible item by key, so with one key the step from no guesses to some (as a third
+            // letter becomes a fourth) scrolled to keep that row on top, past every guess; and
+            // had the two ever been composed together, the shared key would have crashed it.
             if (searching && webSearchFallback && searchResult.guessed) {
-                item(key = "websearch") { WebSearchRow(query.trim(), onWebSearch) }
+                item(key = "websearch-guessed") { WebSearchRow(query.trim(), onWebSearch) }
             }
 
             // Settings shortcut, pinned after Z. Optional: it is the one row in a list of

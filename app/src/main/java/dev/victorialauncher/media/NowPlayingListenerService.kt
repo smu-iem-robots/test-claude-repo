@@ -148,7 +148,7 @@ class NowPlayingListenerService : NotificationListenerService() {
      *
      * The preview lines come out of the same pass with the same exclusions, so a favorite is
      * never given a line about a notification its badge does not count, and only as much of
-     * each notification is read for them as [previewMode] will show.
+     * each notification is kept for them as [previewMode] will show.
      */
     private fun publishCounts() {
         val mode = previewMode
